@@ -4,12 +4,13 @@ from .server import LiveServer
 from .tracker import ModelTracker
 
 
-def _is_colab():
-    """Detect if we're running inside Google Colab."""
+def _is_jupyter():
+    """Detect if we're running inside any Jupyter/notebook environment (Colab, VS Code, modelcode, Kaggle, etc.)."""
     try:
-        import google.colab  # noqa: F401
-        return True
-    except ImportError:
+        from IPython import get_ipython
+        shell = get_ipython()
+        return shell is not None
+    except Exception:
         return False
 
 
@@ -21,7 +22,7 @@ class Visualizer:
         Args:
             model:        A PyTorch nn.Module instance.
             port:         Port for the local web server.
-            open_browser: Automatically open the browser / Colab iframe to the dashboard.
+            open_browser: Automatically open the browser / notebook iframe to the dashboard.
         """
         self.model = model
         self.port = port
@@ -31,11 +32,10 @@ class Visualizer:
         # Give the server a moment to start
         time.sleep(1)
 
-        self._colab = _is_colab()
+        self._jupyter = _is_jupyter()
 
-        if self._colab:
-            self.url = f"https://localhost:{port}"
-            print(f"nn_live: Live Visualizer started (Google Colab mode) — port {port}")
+        if self._jupyter:
+            print(f"nn_live: Live Visualizer started (Notebook mode) — port {port}")
         else:
             self.url = f"http://127.0.0.1:{port}"
             print(f"nn_live: Live Visualizer started at {self.url}")
@@ -52,20 +52,31 @@ class Visualizer:
     # ------------------------------------------------------------------
 
     def _open_dashboard(self):
-        """Open the dashboard — uses Colab port-forwarding when in Colab."""
-        if self._colab:
+        """Open the dashboard inline (Jupyter) or in a browser tab (local)."""
+        if self._jupyter:
+            # Try Colab-native iframe first, fall back to IPython IFrame
             try:
                 from google.colab.output import serve_kernel_port_as_iframe
                 serve_kernel_port_as_iframe(self.port, height="700px")
-            except Exception as e:
-                print(
-                    f"nn_live: Could not open Colab iframe automatically ({e}).\n"
-                    f"  Run this cell manually to view the dashboard:\n\n"
-                    f"    from google.colab.output import serve_kernel_port_as_iframe\n"
-                    f"    serve_kernel_port_as_iframe({self.port}, height='700px')\n"
-                )
+                return
+            except Exception:
+                pass
+
+            # Generic Jupyter fallback — works in VS Code, modelcode, Kaggle, etc.
+            try:
+                from IPython.display import display, IFrame
+                display(IFrame(src=f"http://localhost:{self.port}", width="100%", height="700px"))
+                return
+            except Exception:
+                pass
+
+            # Last resort — just print the URL
+            print(
+                f"nn_live: Could not open iframe automatically.\n"
+                f"  Open this URL in your browser: http://localhost:{self.port}"
+            )
         else:
-            webbrowser.open(self.url)
+            webbrowser.open(f"http://127.0.0.1:{self.port}")
 
     # ------------------------------------------------------------------
     # Public API
@@ -94,4 +105,5 @@ class Visualizer:
     def cleanup(self):
         """Removes PyTorch hooks."""
         self.tracker.cleanup()
+
 
