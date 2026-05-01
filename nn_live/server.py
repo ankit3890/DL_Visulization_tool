@@ -50,7 +50,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 def run_server(port=8000):
     """Run the uvicorn server. This is meant to be run in a thread."""
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="error")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="error")
 
 class LiveServer:
     def __init__(self, port=8000):
