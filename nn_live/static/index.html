@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Neural Network Visualizer - Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0a0f1a;
+            background-image: radial-gradient(circle, #2a2f3a 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: #ffffff;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .glass-panel {
+            background: rgba(20, 20, 25, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        #header {
+            padding: 15px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+            margin: 15px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #00c8ff, #ffffff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ff5050;
+            margin-right: 8px;
+            transition: all 0.3s;
+        }
+
+        .indicator.connected {
+            background-color: #00c8ff;
+            box-shadow: 0 0 10px #00c8ff;
+        }
+
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* Stats Panel */
+        #stats-panel {
+            position: absolute;
+            top: 20px;
+            right: 35px;
+            padding: 15px 20px;
+            min-width: 150px;
+            z-index: 5;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-val {
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        /* Controls Panel */
+        #controls-panel {
+            position: absolute;
+            top: 20px;
+            left: 35px;
+            padding: 15px 20px;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            font-size: 0.85rem;
+        }
+
+        .panel-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #aaa;
+            margin-bottom: 4px;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: 'Inter';
+            font-size: 0.8rem;
+            transition: 0.2s;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        button.active {
+            background: rgba(0, 200, 255, 0.3);
+            border-color: #00c8ff;
+        }
+
+        input[type="range"] {
+            width: 80px;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 30px;
+            left: 35px;
+            padding: 12px 18px;
+            font-size: 0.8rem;
+            z-index: 5;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .legend-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+
+        #tooltip {
+            position: absolute;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            padding: 12px;
+            font-size: 0.8rem;
+            z-index: 20;
+            transform: translate(-50%, -120%);
+            min-width: 140px;
+        }
+
+        .tt-title {
+            font-weight: 600;
+            color: #00c8ff;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+
+        #footer {
+            position: absolute;
+            bottom: 20px;
+            right: 35px;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.4);
+            z-index: 5;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #footer a {
+            color: rgba(255, 255, 255, 0.4);
+            display: flex;
+            align-items: center;
+            transition: color 0.2s;
+        }
+
+        #footer a:hover {
+            color: #00c8ff;
+        }
+
+        /* Performance Modal Dialog */
+        #perf-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(4px);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        #perf-modal-overlay.visible {
+            display: flex;
+        }
+        #perf-modal {
+            background: #13181f;
+            border: 1px solid rgba(255, 160, 0, 0.4);
+            border-radius: 14px;
+            padding: 28px 32px;
+            max-width: 480px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+        }
+        #perf-modal h3 {
+            margin: 0 0 10px;
+            font-size: 1rem;
+            color: #ffa000;
+            letter-spacing: 0.5px;
+        }
+        #perf-modal p {
+            margin: 0 0 22px;
+            font-size: 0.82rem;
+            color: rgba(255,255,255,0.65);
+            line-height: 1.6;
+        }
+        #perf-modal strong { color: #fff; }
+        .modal-btn-row {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        .modal-btn {
+            padding: 9px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+            font-size: 0.82rem;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .modal-btn.primary {
+            background: rgba(0, 200, 255, 0.15);
+            border-color: rgba(0, 200, 255, 0.5);
+            color: #00c8ff;
+        }
+        .modal-btn.primary:hover { background: rgba(0, 200, 255, 0.3); }
+        .modal-btn.secondary {
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.6);
+        }
+        .modal-btn.secondary:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+    </style>
+</head>
+<body>
+    <div id="header" class="glass-panel">
+        <h1>Live Neural Network Visualizer</h1>
+        <div class="status">
+            <div class="indicator" id="status-indicator"></div>
+            <span id="status-text">Disconnected</span>
+        </div>
+    </div>
+
+    <!-- Performance Modal Dialog -->
+    <div id="perf-modal-overlay">
+        <div id="perf-modal">
+            <h3>Large Network Detected</h3>
+            <p id="perf-modal-msg">One or more layers in your model are large.<br>
+            Rendering all neurons may slow down or crash your browser.</p>
+            <p><strong>What would you like to do?</strong></p>
+            <div class="modal-btn-row">
+                <button class="modal-btn primary" id="btn-show-all">Show All Neurons</button>
+                <button class="modal-btn secondary" id="btn-cap-neurons">Cap at 64 (Recommended)</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="canvas-container">
+        <canvas id="networkCanvas"></canvas>
+        
+        <!-- Hover Tooltip -->
+        <div id="tooltip" class="glass-panel">
+            <div class="tt-title" id="tt-layer">Hidden 1</div>
+            <div id="tt-index" style="margin-bottom: 4px;">Neuron: <b>0</b></div>
+            <div id="tt-val" style="margin-top:4px;">Act: 0.000</div>
+            <div id="tt-bias-container" style="display: none; margin-top:2px;">
+                <div id="tt-bias">Bias: 0.000</div>
+            </div>
+            <div id="tt-hint" style="margin-top: 8px; font-size: 0.65rem; color:#888; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px;">🖱 Click to lock focus</div>
+        </div>
+
+        <div id="controls-panel" class="glass-panel">
+            <div class="panel-section">
+                <div class="section-title">⚙️ Animation</div>
+                <div class="control-row">
+                    <span>Flow Speed</span>
+                    <input type="range" id="speed-slider" min="0" max="5" step="0.5" value="2">
+                </div>
+                <div class="control-row">
+                    <span>Normalize</span>
+                    <button id="btn-normalize" class="active">On</button>
+                </div>
+                <div class="control-row">
+                    <span>Particles</span>
+                    <button id="btn-particles" class="active">On</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="stats-panel" class="glass-panel">
+            <div class="stat-row">
+                <span class="stat-label">Epoch</span>
+                <span class="stat-val" id="stat-epoch">-</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Loss</span>
+                <span class="stat-val" id="stat-loss">-</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Accuracy</span>
+                <span class="stat-val" id="stat-acc">-</span>
+            </div>
+        </div>
+
+        <div class="legend glass-panel">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #00c8ff; box-shadow: 0 0 8px #00c8ff;"></div>
+                <span>Cyan = Positive</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ff5050; box-shadow: 0 0 8px #ff5050;"></div>
+                <span>Red = Negative</span>
+            </div>
+            <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 8px 0;">
+            <div class="legend-item">
+                <span>〰️ Lines = <b>Weights</b></span>
+            </div>
+            <div class="legend-item">
+                <span>⏺️ Inside Node = <b>Activation</b></span>
+            </div>
+            <div class="legend-item">
+                <span>📌 Offset Dot = <b>Bias</b></span>
+            </div>
+        </div>
+
+        <div id="footer">
+            <span>Created by Ankit Kumar Singh</span>
+            <a href="https://github.com/ankit3890" target="_blank" title="GitHub Profile">
+                <svg height="20" width="20" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+                </svg>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('networkCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+
+        // UI Elements
+        const tt = document.getElementById('tooltip');
+        const ttLayer = document.getElementById('tt-layer');
+        const ttIndex = document.getElementById('tt-index');
+        const ttVal = document.getElementById('tt-val');
+        const ttBiasContainer = document.getElementById('tt-bias-container');
+        const ttBias = document.getElementById('tt-bias');
+
+        // State & Controls
+        let doNormalize    = true;
+        let showParticles  = true;
+        let flowOffset     = 0;
+        let flowSpeed      = 2;
+
+        // Performance cap state: null = not decided yet, true = cap at 64, false = show all
+        let userCapNeurons   = null;
+        const DISPLAY_CAP    = 64;   // cap value when user chooses to limit
+        const WARN_THRESHOLD = 32;   // trigger dialog when any layer exceeds this
+        let perfDialogShown  = false;
+
+        const perfModalOverlay = document.getElementById('perf-modal-overlay');
+        const perfModalMsg     = document.getElementById('perf-modal-msg');
+
+        document.getElementById('btn-show-all').onclick = function() {
+            userCapNeurons = false;
+            perfModalOverlay.classList.remove('visible');
+        };
+        document.getElementById('btn-cap-neurons').onclick = function() {
+            userCapNeurons = true;
+            perfModalOverlay.classList.remove('visible');
+        };
+
+        let hoveredNode = null;
+        let lockedNode  = null;
+        let mouseX = 0, mouseY = 0;
+
+        document.getElementById('btn-normalize').onclick = function() {
+            doNormalize = !doNormalize;
+            this.textContent = doNormalize ? "On" : "Off";
+            this.classList.toggle('active', doNormalize);
+        };
+        document.getElementById('btn-particles').onclick = function() {
+            showParticles = !showParticles;
+            this.textContent = showParticles ? "On" : "Off";
+            this.classList.toggle('active', showParticles);
+        };
+        document.getElementById('speed-slider').oninput = function() {
+            flowSpeed = parseFloat(this.value);
+        };
+
+        // Resize
+        function resize() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Hover & Click Detection
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = e.clientX - rect.left;
+            mouseY = e.clientY - rect.top;
+        });
+
+        canvas.addEventListener('mousedown', () => {
+            if (hoveredNode) {
+                if (lockedNode && lockedNode.id === hoveredNode.id && lockedNode.actualIndex === hoveredNode.actualIndex) {
+                    lockedNode = null; // Toggle off if clicking the already locked node
+                } else {
+                    lockedNode = hoveredNode; // Lock new node
+                }
+            } else {
+                lockedNode = null; // Clicked empty space
+            }
+        });
+
+        // Data State
+        let architecture = [];
+        let weights = {};
+        let biases = {};
+        let activations = {};
+        
+        let targetWeights = {};
+        let targetBiases = {};
+        let targetActivations = {};
+
+        // WebSocket
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            const url = window.location.host ? wsUrl : 'ws://127.0.0.1:8000/ws'; // Fallback
+            
+            const ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                statusIndicator.classList.add('connected');
+                statusText.textContent = 'Connected';
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'update') {
+                    processUpdate(data);
+                }
+            };
+
+            ws.onclose = () => {
+                statusIndicator.classList.remove('connected');
+                statusText.textContent = 'Disconnected (Reconnecting...)';
+                setTimeout(connect, 2000);
+            };
+        }
+
+        function processUpdate(data) {
+            if (architecture.length === 0 || JSON.stringify(architecture) !== JSON.stringify(data.architecture)) {
+                architecture = data.architecture;
+            }
+            targetWeights     = data.weights     || {};
+            targetBiases      = data.biases       || {};
+            targetActivations = data.activations  || {};
+
+            // Trigger performance dialog the FIRST time we see a large layer
+            if (!perfDialogShown && data.warnings && data.warnings.length > 0) {
+                perfDialogShown = true;
+                perfModalMsg.innerHTML = data.warnings[0] + '<br><br>Rendering all neurons may slow down or crash your browser.';
+                perfModalOverlay.classList.add('visible');
+            }
+
+            // Update Stats
+            if (data.stats) {
+                document.getElementById('stat-epoch').textContent = data.stats.epoch ?? '-';
+                
+                if (data.stats.loss !== null) {
+                    document.getElementById('stat-loss').textContent = data.stats.loss.toFixed(4);
+                }
+                
+                if (data.stats.accuracy !== null) {
+                    document.getElementById('stat-acc').textContent = (data.stats.accuracy*100).toFixed(1) + '%';
+                }
+            }
+
+            // Init state if empty
+            if (Object.keys(weights).length === 0) {
+                weights = JSON.parse(JSON.stringify(targetWeights));
+                biases = JSON.parse(JSON.stringify(targetBiases));
+                activations = JSON.parse(JSON.stringify(targetActivations));
+            }
+        }
+
+        connect();
+
+        // Utilities
+        function lerp(start, end, amt) {
+            return (1 - amt) * start + amt * end;
+        }
+
+        function getColor(val, isWeight = false) {
+            // Cyan/Blue for positive, Soft Red for negative
+            const intensity = Math.max(0.1, Math.min(Math.abs(val), 1.0));
+            if (val >= 0) return `rgba(0, 200, 255, ${intensity})`;
+            else return `rgba(255, 80, 80, ${intensity})`;
+        }
+
+        function getLayerName(lIdx, total) {
+            if (lIdx === 0) return "Input Layer";
+            if (lIdx === total - 1) return "Output Layer";
+            return `Hidden Layer ${lIdx}`;
+        }
+
+        function getASCIIBar(val, maxVal) {
+            const numBlocks = 10;
+            let fill = Math.round((Math.abs(val) / (maxVal || 1)) * numBlocks);
+            fill = Math.min(Math.max(fill, 0), numBlocks);
+            return '■'.repeat(fill) + '□'.repeat(numBlocks - fill);
+        }
+
+        // Render Loop
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            flowOffset -= flowSpeed;
+
+            if (architecture.length === 0) {
+                ctx.fillStyle = '#666';
+                ctx.font = '16px Inter';
+                ctx.textAlign = 'center';
+                ctx.fillText('Waiting for PyTorch model data...', canvas.width/2, canvas.height/2);
+                requestAnimationFrame(draw);
+                return;
+            }
+
+            // Interpolate values for smooth animations
+            const lerpFactor = 0.15;
+            
+            for (let layerId in targetActivations) {
+                if (!activations[layerId]) activations[layerId] = JSON.parse(JSON.stringify(targetActivations[layerId]));
+                for (let i = 0; i < targetActivations[layerId].length; i++) {
+                    activations[layerId][i] = lerp(activations[layerId][i], targetActivations[layerId][i], lerpFactor);
+                }
+            }
+            
+            for (let key in targetWeights) {
+                if (!weights[key]) weights[key] = JSON.parse(JSON.stringify(targetWeights[key]));
+                for (let i = 0; i < targetWeights[key].length; i++) {
+                    for (let j = 0; j < targetWeights[key][i].length; j++) {
+                        weights[key][i][j] = lerp(weights[key][i][j], targetWeights[key][i][j], lerpFactor);
+                    }
+                }
+            }
+
+            for (let layerId in targetBiases) {
+                if (!biases[layerId]) biases[layerId] = JSON.parse(JSON.stringify(targetBiases[layerId]));
+                for (let i = 0; i < targetBiases[layerId].length; i++) {
+                    biases[layerId][i] = lerp(biases[layerId][i], targetBiases[layerId][i], lerpFactor);
+                }
+            }
+
+            // Calculate Normalization Maxes
+            let maxAct = 1.0;
+            let maxWeight = 1.0;
+            if (doNormalize) {
+                let allActs = Object.values(activations).flat();
+                if (allActs.length) maxAct = Math.max(...allActs.map(Math.abs)) || 1.0;
+                
+                let allWeights = [];
+                for (let k in weights) allWeights.push(...weights[k].flat());
+                if (allWeights.length) maxWeight = Math.max(...allWeights.map(Math.abs)) || 1.0;
+            }
+
+            // Layout
+            const paddingX = 330;
+            const startX = paddingX;
+            const endX = canvas.width - paddingX;
+            const numLayers = architecture.length;
+            const layerSpacing = numLayers > 1 ? (endX - startX) / (numLayers - 1) : 0;
+            
+            // Resolve display cap based on user's choice
+            // null = dialog pending (default to capped until they answer)
+            const effectiveCap = (userCapNeurons === false) ? Infinity : DISPLAY_CAP;
+            const nodes = {};
+            let newHoveredNode = null;
+
+            // Find the largest layer size (after cap) to compute a global uniform node radius
+            const maxLayerSize = Math.max(...architecture.map(l => Math.min(l.size, effectiveCap)));
+
+            // Compute node positions & draw columns
+            architecture.forEach((layer, lIdx) => {
+                const x = startX + lIdx * layerSpacing;
+                const displaySize = Math.min(layer.size, effectiveCap);
+
+                const paddingY = 120;
+                const availableHeight = canvas.height - 2 * paddingY;
+
+                // Shrink radius for dense layers so all nodes fit
+                // Min radius = 8px for very large layers, max = 18px for small ones
+                const radius = Math.max(8, Math.min(18, (availableHeight / maxLayerSize) * 0.4));
+
+                // Spacing: at minimum give 2px gap between nodes (2*radius + 2px)
+                const nodeSpacing = Math.min(
+                    availableHeight / displaySize,
+                    2 * radius + Math.max(2, (availableHeight - displaySize * 2 * radius) / Math.max(displaySize - 1, 1))
+                );
+                const totalHeight = (displaySize - 1) * nodeSpacing;
+                const startY = (canvas.height - totalHeight) / 2;
+
+                // Draw vertical subtle grouping line
+                ctx.beginPath();
+                ctx.moveTo(x, 50);
+                ctx.lineTo(x, canvas.height - 50);
+                ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Layer Label (Top of column with glow)
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 15px Inter';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = '#00c8ff';
+                ctx.shadowBlur = 12;
+                ctx.fillText(`${getLayerName(lIdx, numLayers)}`, x, 80);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = '#888';
+                ctx.font = '12px Inter';
+                // Show how many are rendered vs actual if capped
+                const isCapped = userCapNeurons !== false && layer.size > DISPLAY_CAP;
+                const sizeLabel = isCapped
+                    ? `${DISPLAY_CAP} / ${layer.size} Neurons (capped)`
+                    : `${layer.size} Neurons`;
+                ctx.fillText(sizeLabel, x, 100);
+
+                nodes[layer.id] = [];
+                for (let i = 0; i < displaySize; i++) {
+                    const ny = startY + i * nodeSpacing;
+
+                    nodes[layer.id].push({
+                        id: layer.id,
+                        layerName: getLayerName(lIdx, numLayers),
+                        x: x,
+                        y: ny,
+                        radius: radius,
+                        actualIndex: i,
+                        isEllipsis: false
+                    });
+
+                    // Check hover — use dynamic radius for hit detection
+                    const dist = Math.hypot(mouseX - x, mouseY - ny);
+                    if (dist < radius + 4) {
+                        newHoveredNode = nodes[layer.id][i];
+                    }
+                }
+            });
+
+            // Draw activation function badges between each pair of columns
+            for (let i = 0; i < architecture.length - 1; i++) {
+                const leftLayer  = architecture[i];
+                const rightLayer = architecture[i + 1];
+
+                // The activation badge between col i and i+1 represents what is applied
+                // AFTER the linear transformation that produces the right column's neurons.
+                const actLabel = rightLayer.activation;
+                if (!actLabel) continue;
+
+                const leftX  = startX + i * layerSpacing;
+                const rightX = startX + (i + 1) * layerSpacing;
+                const midX   = (leftX + rightX) / 2;
+                const midY   = canvas.height / 2;
+
+                const pad    = 8;
+                ctx.font     = 'bold 11px Inter';
+                ctx.textAlign    = 'center';
+                ctx.textBaseline = 'middle';
+                const tw = ctx.measureText(actLabel).width;
+
+                // Pill background
+                ctx.fillStyle = 'rgba(15, 20, 30, 0.85)';
+                ctx.beginPath();
+                ctx.roundRect(midX - tw / 2 - pad, midY - 11, tw + pad * 2, 22, 11);
+                ctx.fill();
+
+                // Pill border with a subtle cyan glow
+                ctx.strokeStyle = 'rgba(0, 200, 255, 0.35)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Label text
+                ctx.fillStyle = '#00c8ff';
+                ctx.shadowColor = '#00c8ff';
+                ctx.shadowBlur = 6;
+                ctx.fillText(actLabel, midX, midY);
+                ctx.shadowBlur = 0;
+            }
+
+            hoveredNode = newHoveredNode;
+            const activeNode = lockedNode || hoveredNode;
+
+            // Draw edges
+            for (let i = 0; i < architecture.length - 1; i++) {
+                const sourceLayer = architecture[i];
+                const targetLayer = architecture[i+1];
+                const weightKey = `${sourceLayer.id}->${targetLayer.id}`;
+                const wMatrix = weights[weightKey];
+                
+                if (wMatrix) {
+                    nodes[sourceLayer.id].forEach(sNode => {
+                        if (sNode.isEllipsis) return;
+                        
+                        nodes[targetLayer.id].forEach(tNode => {
+                            if (tNode.isEllipsis) return;
+                            
+                            let w = wMatrix[sNode.actualIndex][tNode.actualIndex];
+                            let normW = w / maxWeight;
+                            
+                            // Highlight active path
+                            const isActiveEdge = activeNode && 
+                                ((activeNode.id === sNode.id && activeNode.actualIndex === sNode.actualIndex) || 
+                                 (activeNode.id === tNode.id && activeNode.actualIndex === tNode.actualIndex));
+                            
+                            // Aggressively dim weak connections, highlight specific ones
+                            let alpha = Math.abs(normW) < 0.1 ? 0.05 : Math.abs(normW) * 0.4 + 0.1;
+                            let lineWidth = 1;
+
+                            if (activeNode) {
+                                if (isActiveEdge) {
+                                    alpha = 1.0;
+                                    lineWidth = Math.abs(normW) * 3 + 1;
+                                } else {
+                                    alpha = 0.02; // dim heavily
+                                }
+                            }
+
+                            ctx.beginPath();
+                            ctx.moveTo(sNode.x, sNode.y);
+                            
+                            // Smooth bezier curve
+                            const cpOffset = (tNode.x - sNode.x) / 3;
+                            ctx.bezierCurveTo(
+                                sNode.x + cpOffset, sNode.y,
+                                tNode.x - cpOffset, tNode.y,
+                                tNode.x, tNode.y
+                            );
+                            
+                            // Base edge
+                            let baseColor = normW >= 0 ? `rgba(0, 200, 255, ${alpha})` : `rgba(255, 80, 80, ${alpha})`;
+                            ctx.strokeStyle = baseColor;
+                            ctx.lineWidth = lineWidth;
+                            ctx.setLineDash([]);
+                            ctx.stroke();
+
+                            // Flow animation (particles moving with dynamic speed)
+                            if (showParticles && Math.abs(normW) > 0.05 && (!activeNode || isActiveEdge)) {
+                                ctx.beginPath();
+                                ctx.moveTo(sNode.x, sNode.y);
+                                ctx.bezierCurveTo(
+                                    sNode.x + cpOffset, sNode.y,
+                                    tNode.x - cpOffset, tNode.y,
+                                    tNode.x, tNode.y
+                                );
+                                ctx.setLineDash([4, 25]);
+                                // Speed scales with weight magnitude to show strong signals flowing faster visually
+                                ctx.lineDashOffset = flowOffset * Math.sign(w) * (Math.abs(normW) * 1.5 + 0.5);
+                                ctx.lineWidth = lineWidth + 1;
+                                ctx.strokeStyle = `rgba(255,255,255, ${alpha * 0.8})`;
+                                ctx.stroke();
+                            }
+
+                            // Draw Weight Text on Active Edges
+                            if (isActiveEdge) {
+                                const midX = (sNode.x + tNode.x) / 2;
+                                const midY = (sNode.y + tNode.y) / 2;
+                                const wText = 'w: ' + w.toFixed(2);
+                                
+                                ctx.font = '10px monospace';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                const textW = ctx.measureText(wText).width;
+                                
+                                ctx.fillStyle = 'rgba(20, 20, 25, 0.95)';
+                                ctx.beginPath();
+                                ctx.roundRect(midX - textW/2 - 4, midY - 8, textW + 8, 16, 4);
+                                ctx.fill();
+                                
+                                ctx.strokeStyle = baseColor;
+                                ctx.lineWidth = 1;
+                                ctx.stroke();
+                                
+                                ctx.fillStyle = '#fff';
+                                ctx.fillText(wText, midX, midY);
+                            }
+                        });
+                    });
+                }
+            }
+            ctx.setLineDash([]);
+
+            // Draw nodes
+            architecture.forEach((layer) => {
+                const layerActivations = activations[layer.id] || [];
+                const layerBiases = biases[layer.id] || [];
+                
+                nodes[layer.id].forEach(node => {
+                    ctx.beginPath();
+                    
+                    if (node.isEllipsis) return; // no longer used, but keep guard
+                    
+                    let act = layerActivations.length > node.actualIndex ? layerActivations[node.actualIndex] : 0;
+                    let normAct = act / maxAct;
+                    
+                    let b = layerBiases.length > node.actualIndex ? layerBiases[node.actualIndex] : 0;
+                    let normB = b / maxWeight;
+
+                    const isActiveNode = activeNode && activeNode.id === node.id && activeNode.actualIndex === node.actualIndex;
+                    const isHovered = hoveredNode && hoveredNode.id === node.id && hoveredNode.actualIndex === node.actualIndex;
+                    
+                    // Hover scale animation — use dynamic per-node base radius
+                    const baseR = node.radius;
+                    const radius = isHovered || isActiveNode ? baseR * 1.25 : baseR;
+
+                    // Draw Node Base
+                    ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#111';
+                    ctx.fill();
+                    
+                    // Radial gradient glow (Pulsing)
+                    const intensity = Math.min(Math.abs(normAct), 1);
+                    if (intensity > 0.01) {
+                        const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, radius);
+                        const c = normAct >= 0 ? '0, 200, 255' : '255, 80, 80';
+                        grad.addColorStop(0, `rgba(${c}, ${intensity})`);
+                        grad.addColorStop(1, `rgba(${c}, 0)`);
+                        
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+                        ctx.fillStyle = grad;
+                        ctx.fill();
+
+                        // Outer shadow with pulse animation
+                        const timePulse = Math.sin(Date.now() / 200) * 0.2 + 0.8; 
+                        ctx.shadowColor = `rgba(${c}, 1)`;
+                        ctx.shadowBlur = (isActiveNode ? 25 : 12) * intensity * timePulse;
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                    }
+
+                    // Node border
+                    ctx.strokeStyle = isActiveNode ? '#fff' : '#444';
+                    ctx.lineWidth = isActiveNode ? 2 : 1;
+                    ctx.stroke();
+
+                    // Text Value — only show if radius is large enough to be readable
+                    if (radius >= 10) {
+                        ctx.font = isActiveNode ? `bold ${Math.min(13, radius * 0.8)}px monospace` : `bold ${Math.min(12, radius * 0.75)}px monospace`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        
+                        ctx.shadowColor = '#000';
+                        ctx.shadowBlur = 4;
+                        
+                        if (isActiveNode) {
+                            ctx.fillStyle = '#fff';
+                            ctx.shadowBlur = 6;
+                        } else {
+                            ctx.fillStyle = activeNode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.95)';
+                        }
+                        
+                        ctx.fillText(act.toFixed(2), node.x, node.y);
+                        ctx.shadowBlur = 0;
+                    }
+
+                    // Bias indicator (small pill bottom-right)
+                    if (layerBiases.length > 0) {
+                        const bText = 'b: ' + b.toFixed(2);
+                        ctx.font = '9px monospace';
+                        ctx.textAlign = 'left';
+                        ctx.textBaseline = 'middle';
+                        const textW = ctx.measureText(bText).width;
+                        
+                        const bx = node.x + radius - 4;
+                        const by = node.y + radius - 4;
+                        
+                        ctx.fillStyle = 'rgba(20, 20, 25, 0.9)';
+                        ctx.beginPath();
+                        ctx.roundRect(bx, by - 7, textW + 6, 14, 4);
+                        ctx.fill();
+                        
+                        ctx.strokeStyle = getColor(normB);
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        
+                        ctx.fillStyle = '#ddd';
+                        ctx.fillText(bText, bx + 3, by);
+                    }
+
+                    // Update Tooltip State if hovered (even if not clicked-locked)
+                    if (isHovered) {
+                        tt.style.opacity = 1;
+                        tt.style.left = (mouseX + 15) + 'px';
+                        tt.style.top = (mouseY - 15) + 'px';
+                        ttLayer.textContent = node.layerName;
+                        ttIndex.innerHTML = `Neuron: <b>${node.actualIndex}</b>`;
+                        ttVal.innerHTML = `<span style="font-family:monospace; color:${act>=0?'#00c8ff':'#ff5050'}">Act:  ${getASCIIBar(act, maxAct)} ${act.toFixed(4)}</span>`;
+                        
+                        if (layerBiases.length > 0) {
+                            ttBiasContainer.style.display = 'block';
+                            ttBias.innerHTML = `<span style="font-family:monospace; color:${b>=0?'#00c8ff':'#ff5050'}">Bias: ${getASCIIBar(b, maxWeight)} ${b.toFixed(4)}</span>`;
+                        } else {
+                            ttBiasContainer.style.display = 'none';
+                        }
+                    }
+                });
+            });
+
+            if (!hoveredNode) {
+                tt.style.opacity = 0;
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
