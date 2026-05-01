@@ -1,5 +1,10 @@
 # nn_live — Real-Time Neural Network Visualizer
 
+<img width="1918" height="887" alt="Screenshot 2026-05-01 205452" src="https://github.com/user-attachments/assets/6becc8c6-fd5c-4997-847f-6730701be9c2" />
+
+<img width="698" height="658" alt="image" src="https://github.com/user-attachments/assets/a19d37e3-5e53-48ec-b34c-dcc43cb9e227" />
+
+
 > Watch your PyTorch model think. `nn_live` hooks directly into your training loop and streams weights, biases, and activations to a beautiful, interactive browser dashboard — updated live, every epoch.
 
 ---
