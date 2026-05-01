@@ -9,7 +9,10 @@ def _is_remote_jupyter():
     Returns False for local Jupyter (VS Code, JupyterLab) — those can open a browser tab normally.
     """
     import os
-    # Google Colab
+    # Check Colab env vars first — set early in boot, most reliable signal
+    if os.environ.get('COLAB_BACKEND_VERSION') or os.environ.get('COLAB_RELEASE_TAG') or os.environ.get('COLAB_GPU'):
+        return True
+    # Google Colab import check
     try:
         import google.colab  # noqa: F401
         return True
@@ -17,9 +20,6 @@ def _is_remote_jupyter():
         pass
     # Kaggle
     if os.path.exists('/kaggle/working'):
-        return True
-    # Generic Colab env var fallback
-    if os.environ.get('COLAB_BACKEND_VERSION') or os.environ.get('COLAB_RELEASE_TAG'):
         return True
     return False
 
