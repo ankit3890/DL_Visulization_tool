@@ -4,6 +4,7 @@
 
 <!-- <img width="698" height="658" alt="image" src="https://github.com/user-attachments/assets/a19d37e3-5e53-48ec-b34c-dcc43cb9e227" /> -->
 
+> Test colab link - https://colab.research.google.com/drive/1QdJB_BhDSFmEgEnTbHOLgQyl151ax2DS#scrollTo=ot-QGgSYJ-3Q
 
 > Watch your PyTorch model think. `nn_live` hooks directly into your training loop and streams weights, biases, and activations to a beautiful, interactive browser dashboard — updated live, every epoch.
 
