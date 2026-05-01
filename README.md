@@ -4,6 +4,45 @@
 
 ---
 
+## Installation
+
+### Prerequisites
+
+- **Python** ≥ 3.7
+- **PyTorch** ≥ 1.9.0 — install from [pytorch.org](https://pytorch.org/get-started/locally/) for your platform/CUDA version
+
+### Install from PyPI (Recommended)
+
+```bash
+pip install nn_live
+```
+
+This automatically installs all required dependencies:
+
+| Dependency | Version |
+|---|---|
+| `torch` | ≥ 1.9.0 |
+| `fastapi` | ≥ 0.68.0 |
+| `uvicorn` | ≥ 0.15.0 |
+| `websockets` | ≥ 10.0 |
+
+### Install from Source (Latest / Development)
+
+```bash
+git clone https://github.com/ankit3890/nn_live.git
+cd nn_live
+pip install -e .
+```
+
+### Verify Installation
+
+```python
+import nn_live
+print(nn_live.__version__)   # e.g. 0.1.0
+```
+
+---
+
 ## Features
 
 | Feature | Description |
