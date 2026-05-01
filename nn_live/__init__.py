@@ -4,14 +4,24 @@ from .server import LiveServer
 from .tracker import ModelTracker
 
 
-def _is_jupyter():
-    """Detect if we're running inside any Jupyter/notebook environment (Colab, VS Code, modelcode, Kaggle, etc.)."""
+def _is_remote_jupyter():
+    """Detect if we're in a REMOTE notebook environment where localhost is not accessible in the browser.
+    Returns False for local Jupyter (VS Code, JupyterLab) — those can open a browser tab normally.
+    """
+    import os
+    # Google Colab
     try:
-        from IPython import get_ipython
-        shell = get_ipython()
-        return shell is not None
-    except Exception:
-        return False
+        import google.colab  # noqa: F401
+        return True
+    except ImportError:
+        pass
+    # Kaggle
+    if os.path.exists('/kaggle/working'):
+        return True
+    # Generic Colab env var fallback
+    if os.environ.get('COLAB_BACKEND_VERSION') or os.environ.get('COLAB_RELEASE_TAG'):
+        return True
+    return False
 
 
 class Visualizer:
@@ -32,10 +42,10 @@ class Visualizer:
         # Give the server a moment to start
         time.sleep(1)
 
-        self._jupyter = _is_jupyter()
+        self._remote = _is_remote_jupyter()
 
-        if self._jupyter:
-            print(f"nn_live: Live Visualizer started (Notebook mode) — port {port}")
+        if self._remote:
+            print(f"nn_live: Live Visualizer started (Remote Notebook mode) — port {port}")
         else:
             self.url = f"http://127.0.0.1:{port}"
             print(f"nn_live: Live Visualizer started at {self.url}")
@@ -52,9 +62,9 @@ class Visualizer:
     # ------------------------------------------------------------------
 
     def _open_dashboard(self):
-        """Open the dashboard inline (Jupyter) or in a browser tab (local)."""
-        if self._jupyter:
-            # Try Colab-native iframe first, fall back to IPython IFrame
+        """Open the dashboard — inline iframe for remote envs (Colab/Kaggle), browser tab for local."""
+        if self._remote:
+            # Try Colab-native iframe first
             try:
                 from google.colab.output import serve_kernel_port_as_iframe
                 serve_kernel_port_as_iframe(self.port, height="700px")
@@ -62,7 +72,7 @@ class Visualizer:
             except Exception:
                 pass
 
-            # Generic Jupyter fallback — works in VS Code, modelcode, Kaggle, etc.
+            # Generic remote fallback (Kaggle, etc.)
             try:
                 from IPython.display import display, IFrame
                 display(IFrame(src=f"http://localhost:{self.port}", width="100%", height="700px"))
@@ -70,12 +80,12 @@ class Visualizer:
             except Exception:
                 pass
 
-            # Last resort — just print the URL
             print(
                 f"nn_live: Could not open iframe automatically.\n"
                 f"  Open this URL in your browser: http://localhost:{self.port}"
             )
         else:
+            # Local environment (VS Code Jupyter, plain Python, JupyterLab, etc.) — open browser tab
             webbrowser.open(f"http://127.0.0.1:{self.port}")
 
     # ------------------------------------------------------------------
