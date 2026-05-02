@@ -20,16 +20,24 @@ async def root():
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
+        self._last_message: str | None = None  # cached last state
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        # Replay last known state so late-joining clients see data immediately
+        if self._last_message is not None:
+            try:
+                await websocket.send_text(self._last_message)
+            except Exception:
+                pass
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
+        self._last_message = message  # cache before sending
         for connection in self.active_connections:
             try:
                 await connection.send_text(message)
@@ -43,7 +51,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Just keep connection open, we don't expect messages from client for now
             data = await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -58,7 +65,7 @@ class LiveServer:
         self.thread = threading.Thread(target=run_server, args=(port,), daemon=True)
         self.loop = asyncio.new_event_loop()
         self.loop_thread = threading.Thread(target=self._start_loop, daemon=True)
-        
+
         # Start threads
         self.thread.start()
         self.loop_thread.start()
@@ -68,11 +75,14 @@ class LiveServer:
         self.loop.run_forever()
 
     def broadcast_data(self, data: dict):
-        """Send data to all connected websocket clients."""
+        """Send data to all connected websocket clients and cache for late joiners."""
+        message = json.dumps(data)
+        manager._last_message = message  # always cache, even if no clients yet
+
         if not manager.active_connections:
             return
-        
+
         async def send():
-            await manager.broadcast(json.dumps(data))
-            
+            await manager.broadcast(message)
+
         asyncio.run_coroutine_threadsafe(send(), self.loop)
