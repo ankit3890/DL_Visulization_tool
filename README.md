@@ -1,11 +1,6 @@
 # nn_live — Real-Time Neural Network Visualizer
 
-
-
-<img width="800" height="324" alt="image" src="https://github.com/user-attachments/assets/2e05c614-ad75-494d-8c08-0583719b7b31" />
-
-
-
+https://github.com/user-attachments/assets/a6a3b5fc-8bad-435f-b44c-8c564930dd22
 
 
 > Test colab link - https://colab.research.google.com/drive/1QdJB_BhDSFmEgEnTbHOLgQyl151ax2DS#scrollTo=ot-QGgSYJ-3Q
