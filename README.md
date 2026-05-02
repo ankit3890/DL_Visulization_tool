@@ -118,7 +118,7 @@ num_features = 30
 model = Model1(num_features)
 
 # 2. Attach the visualizer — opens browser automatically
-viz = Visualizer(model, port=8000)
+viz = Visualizer(model, port=8000)   # Line 1 to be added
 
 # 3. Train and push live updates each epoch
 optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
@@ -142,7 +142,7 @@ for epoch in range(100):
     optimizer.zero_grad()
 
     # Push to the dashboard
-    viz.step(epoch=epoch + 1, loss=loss, accuracy=accuracy)
+    viz.step(epoch=epoch + 1, loss=loss, accuracy=accuracy) # Line 2 be added in loop
 ```
 
 ---
