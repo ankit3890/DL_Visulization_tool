@@ -1,51 +1,47 @@
 # nn_live — Real-Time Neural Network Visualizer
 
-<img width="1918" height="887" alt="Screenshot 2026-05-01 205452" src="https://github.com/user-attachments/assets/6becc8c6-fd5c-4997-847f-6730701be9c2" />
 
-<!-- <img width="698" height="658" alt="image" src="https://github.com/user-attachments/assets/a19d37e3-5e53-48ec-b34c-dcc43cb9e227" /> -->
+
+https://github.com/user-attachments/assets/8947cd30-0203-42e3-974a-c9caf1b441e2
+
+
+
 
 > Test colab link - https://colab.research.google.com/drive/1QdJB_BhDSFmEgEnTbHOLgQyl151ax2DS#scrollTo=ot-QGgSYJ-3Q
+
+Watch your neural network learn in real-time.
+
+• Live neuron activations
+• Weight flow visualization
+• Works directly with PyTorch
+• Opens in browser automatically
+
+---
 
 > Watch your PyTorch model think. `nn_live` hooks directly into your training loop and streams weights, biases, and activations to a beautiful, interactive browser dashboard — updated live, every epoch.
 
 ---
 
-## Installation
+## Why nn_live?
 
-### Prerequisites
+Most tools like TensorBoard show numbers.
 
-- **Python** ≥ 3.7
-- **PyTorch** ≥ 1.9.0 — install from [pytorch.org](https://pytorch.org/get-started/locally/) for your platform/CUDA version
+nn_live lets you SEE:
+- Which neurons are actually learning
+- How signals flow through your network
+- Why your model is failing or succeeding
 
-### Install from PyPI (Recommended)
+This turns neural networks from a black box into something you can understand visually.
 
-```bash
-pip install nn_live
-```
+---
 
-This automatically installs all required dependencies:
+## Comparison
 
-| Dependency | Version |
-|---|---|
-| `torch` | ≥ 1.9.0 |
-| `fastapi` | ≥ 0.68.0 |
-| `uvicorn` | ≥ 0.15.0 |
-| `websockets` | ≥ 10.0 |
-
-### Install from Source (Latest / Development)
-
-```bash
-git clone https://github.com/ankit3890/nn_live.git
-cd nn_live
-pip install -e .
-```
-
-### Verify Installation
-
-```python
-import nn_live
-print(nn_live.__version__)   # e.g. 0.1.0
-```
+| Tool | Real-Time | PyTorch | Visual |
+|------|----------|--------|--------|
+| TensorBoard | ❌ | ✔ | ❌ |
+| TensorFlow Playground | ✔ | ❌ | ✔ |
+| nn_live | ✔ | ✔ | ✔ |
 
 ---
 
@@ -63,6 +59,30 @@ print(nn_live.__version__)   # e.g. 0.1.0
 | **Controls** | Toggle normalization, particle flow, and adjust animation speed in real-time |
 | **Activation Badges** | Auto-detects activation functions (ReLU, Sigmoid, Tanh, etc.) and displays them between layer columns |
 | **Safety Limits** | Automatically caps large networks to protect browser performance, with clear warnings |
+
+
+## Installation
+
+### Install from PyPI (Recommended)
+
+```bash
+pip install nn_live
+```
+
+### Install from Source (Latest / Development)
+
+```bash
+git clone https://github.com/ankit3890/nn_live.git
+cd nn_live
+pip install -e .
+```
+
+### Verify Installation
+
+```python
+import nn_live
+print(nn_live.__version__)   # e.g. 0.1.0
+```
 
 ---
 
