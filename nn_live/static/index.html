@@ -323,7 +323,7 @@
             <p><strong>What would you like to do?</strong></p>
             <div class="modal-btn-row">
                 <button class="modal-btn primary" id="btn-show-all">Show All Neurons</button>
-                <button class="modal-btn secondary" id="btn-cap-neurons">Cap at 64 (Recommended)</button>
+                <button class="modal-btn secondary" id="btn-cap-neurons">Cap at 32 (Recommended)</button>
             </div>
         </div>
     </div>
@@ -356,6 +356,17 @@
                 <div class="control-row">
                     <span>Particles</span>
                     <button id="btn-particles" class="active">On</button>
+                </div>
+            </div>
+            <div class="panel-section" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+                <div class="section-title">🔬 Neurons</div>
+                <div class="control-row">
+                    <span>Cap per Layer</span>
+                    <button id="btn-show-all-inline" style="font-size:0.75rem; padding:4px 8px;">All</button>
+                </div>
+                <div class="control-row">
+                    <span id="neuron-cap-label">32 neurons</span>
+                    <input type="range" id="neuron-cap-slider" min="4" max="128" step="4" value="32">
                 </div>
             </div>
         </div>
@@ -426,10 +437,10 @@
         let flowOffset     = 0;
         let flowSpeed      = 2;
 
-        // Performance cap state: null = not decided yet, true = cap at 64, false = show all
+        // Performance cap state: null = not decided yet, true = use slider cap, false = show all
         let userCapNeurons   = null;
-        const DISPLAY_CAP    = 64;   // cap value when user chooses to limit
-        const WARN_THRESHOLD = 32;   // trigger dialog when any layer exceeds this
+        let DISPLAY_CAP      = 32;   // live value driven by slider
+        const WARN_THRESHOLD = 16;   // trigger dialog when any layer exceeds this
         let perfDialogShown  = false;
 
         const perfModalOverlay = document.getElementById('perf-modal-overlay');
@@ -460,6 +471,23 @@
         };
         document.getElementById('speed-slider').oninput = function() {
             flowSpeed = parseFloat(this.value);
+        };
+
+        // Neuron cap slider — live control
+        const neuronCapSlider = document.getElementById('neuron-cap-slider');
+        const neuronCapLabel  = document.getElementById('neuron-cap-label');
+        neuronCapSlider.oninput = function() {
+            DISPLAY_CAP = parseInt(this.value);
+            neuronCapLabel.textContent = `${DISPLAY_CAP} neurons`;
+            if (DISPLAY_CAP === parseInt(neuronCapSlider.max)) {
+                neuronCapLabel.textContent = `${DISPLAY_CAP} (max)`;
+            }
+            // If they manually slide, switch to capped mode
+            userCapNeurons = true;
+        };
+        document.getElementById('btn-show-all-inline').onclick = function() {
+            userCapNeurons = false;
+            neuronCapLabel.textContent = 'All neurons';
         };
 
         // Resize
