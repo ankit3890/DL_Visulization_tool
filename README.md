@@ -15,10 +15,6 @@ Watch your neural network learn in real-time.
 
 ---
 
-> Watch your PyTorch model think. `nn_live` hooks directly into your training loop and streams weights, biases, and activations to a beautiful, interactive browser dashboard — updated live, every epoch.
-
----
-
 ## Why nn_live?
 
 Most tools like TensorBoard show numbers.
