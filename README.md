@@ -79,6 +79,14 @@ print(nn_live.__version__)   # e.g. 0.1.0
 
 ---
 
+## ⚡ Get Started in 10 Seconds
+
+```python
+from nn_live import Visualizer
+viz = Visualizer(model)
+```
+---
+
 ## Quick Start
 
 > **Requirement:** Your model must use `nn.Linear` layers. The visualizer is optimized for Dense/Fully Connected networks.
@@ -375,6 +383,17 @@ dummy_sequence = torch.rand(1, 5, 10)
 output = model(dummy_sequence)
 viz.step()
 ```
+
+---
+
+## Limitations
+
+Best for:
+✔ Fully Connected Networks (MLPs)
+
+Partial support:
+⚠ CNNs → only dense layers visualized  
+⚠ RNNs → only output layers visualized
 
 ---
 
