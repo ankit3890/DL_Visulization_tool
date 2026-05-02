@@ -99,27 +99,23 @@ from nn_live import Visualizer
 # 1. Define your model
 #    Use unique names for each activation (sigmoid1, sigmoid2, etc.)
 #    so the visualizer can detect and display all of them.
+
 class Model1(nn.Module):
     def __init__(self, num_features):
         super().__init__()
-        self.linear1  = nn.Linear(num_features, 5)
-        self.relu     = nn.ReLU()
-        self.linear2  = nn.Linear(5, 3)
-        self.sigmoid1 = nn.Sigmoid()
-        self.linear3  = nn.Linear(3, 5)
-        self.sigmoid2 = nn.Sigmoid()
-        self.linear4  = nn.Linear(5, 1)
-        self.sigmoid3 = nn.Sigmoid()
+        self.network = nn.Sequential(
+            nn.Linear(num_features, 5),
+            nn.ReLU(),
+            nn.Linear(5, 3),
+            nn.Sigmoid(),
+            nn.Linear(3, 5),
+            nn.Sigmoid(),
+            nn.Linear(5, 1),
+            nn.ReLU()
+        )
 
     def forward(self, features):
-        out = self.linear1(features)
-        out = self.relu(out)
-        out = self.linear2(out)
-        out = self.sigmoid1(out)
-        out = self.linear3(out)
-        out = self.sigmoid2(out)
-        out = self.linear4(out)
-        out = self.sigmoid3(out)
+        out = self.network(features)
         return out
 
 num_features = 30
