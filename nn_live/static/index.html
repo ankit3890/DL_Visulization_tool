@@ -731,6 +731,39 @@
                     : `${layer.size} Neurons`;
                 ctx.fillText(sizeLabel, x, 100);
 
+                // Dropout badge
+                let badgeY = 117;
+                if (layer.dropout_p != null) {
+                    ctx.font = 'bold 10px Inter';
+                    const dpText = `🎲 Dropout ${(layer.dropout_p * 100).toFixed(0)}%`;
+                    const tw = ctx.measureText(dpText).width;
+                    ctx.fillStyle = 'rgba(255,180,0,0.15)';
+                    ctx.beginPath();
+                    ctx.roundRect(x - tw/2 - 5, badgeY - 9, tw + 10, 14, 6);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(255,180,0,0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    ctx.fillStyle = '#ffa500';
+                    ctx.fillText(dpText, x, badgeY);
+                    badgeY += 16;
+                }
+                // BatchNorm badge
+                if (layer.has_batchnorm) {
+                    ctx.font = 'bold 10px Inter';
+                    const bnText = '⚖ BatchNorm';
+                    const tw2 = ctx.measureText(bnText).width;
+                    ctx.fillStyle = 'rgba(120,80,255,0.15)';
+                    ctx.beginPath();
+                    ctx.roundRect(x - tw2/2 - 5, badgeY - 9, tw2 + 10, 14, 6);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(150,100,255,0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    ctx.fillStyle = '#a070ff';
+                    ctx.fillText(bnText, x, badgeY);
+                }
+
                 nodes[layer.id] = [];
                 for (let i = 0; i < displaySize; i++) {
                     const ny = startY + i * nodeSpacing;
@@ -806,20 +839,26 @@
                 if (wMatrix) {
                     nodes[sourceLayer.id].forEach(sNode => {
                         if (sNode.isEllipsis) return;
-                        
+                        const srcDropped = (activations[`${sourceLayer.id}_dropped`] || [])[sNode.actualIndex] === true;
+
                         nodes[targetLayer.id].forEach(tNode => {
                             if (tNode.isEllipsis) return;
-                            
+                            const tgtDropped = (activations[`${targetLayer.id}_dropped`] || [])[tNode.actualIndex] === true;
+
                             let w = wMatrix[sNode.actualIndex][tNode.actualIndex];
                             let normW = w / maxWeight;
+
+                            // Dim edges to/from dropped neurons
+                            const edgeDropped = srcDropped || tgtDropped;
                             
                             // Highlight active path
-                            const isActiveEdge = activeNode && 
-                                ((activeNode.id === sNode.id && activeNode.actualIndex === sNode.actualIndex) || 
+                            const isActiveEdge = activeNode &&
+                                ((activeNode.id === sNode.id && activeNode.actualIndex === sNode.actualIndex) ||
                                  (activeNode.id === tNode.id && activeNode.actualIndex === tNode.actualIndex));
-                            
-                            // Aggressively dim weak connections, highlight specific ones
-                            let alpha = Math.abs(normW) < 0.1 ? 0.05 : Math.abs(normW) * 0.4 + 0.1;
+
+                            // Dim dropped edges significantly
+                            let alpha = edgeDropped ? 0.02
+                                : Math.abs(normW) < 0.1 ? 0.05 : Math.abs(normW) * 0.4 + 0.1;
                             let lineWidth = 1;
 
                             if (activeNode) {
@@ -918,53 +957,74 @@
                     const baseR = node.radius;
                     const radius = isHovered || isActiveNode ? baseR * 1.25 : baseR;
 
-                    // Draw Node Base
+                    // --- Dropout mask check ---
+                    const droppedList = activations[`${layer.id}_dropped`] || [];
+                    const isDropped   = droppedList.length > node.actualIndex && droppedList[node.actualIndex] === true;
+
+                    // --- Draw Node Base ---
                     ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-                    ctx.fillStyle = '#111';
+                    ctx.fillStyle = isDropped ? '#1a1a1a' : '#111';
                     ctx.fill();
-                    
-                    // Radial gradient glow (Pulsing)
-                    const intensity = Math.min(Math.abs(normAct), 1);
-                    if (intensity > 0.01) {
-                        const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, radius);
-                        const c = normAct >= 0 ? '0, 200, 255' : '255, 80, 80';
-                        grad.addColorStop(0, `rgba(${c}, ${intensity})`);
-                        grad.addColorStop(1, `rgba(${c}, 0)`);
-                        
+
+                    if (isDropped) {
+                        // Grey dimmed neuron — show it's switched off
+                        ctx.globalAlpha = 0.35;
                         ctx.beginPath();
                         ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-                        ctx.fillStyle = grad;
+                        ctx.fillStyle = '#444';
                         ctx.fill();
+                        ctx.strokeStyle = 'rgba(120,120,120,0.5)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        // Strike-through line (the neuron is "off")
+                        ctx.beginPath();
+                        ctx.moveTo(node.x - radius * 0.7, node.y);
+                        ctx.lineTo(node.x + radius * 0.7, node.y);
+                        ctx.strokeStyle = 'rgba(255,80,80,0.6)';
+                        ctx.lineWidth = 1.5;
+                        ctx.stroke();
+                        ctx.globalAlpha = 1.0;
+                    } else {
+                        // --- Radial gradient glow (Pulsing) ---
+                        const intensity = Math.min(Math.abs(normAct), 1);
+                        if (intensity > 0.01) {
+                            const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, radius);
+                            const c = normAct >= 0 ? '0, 200, 255' : '255, 80, 80';
+                            grad.addColorStop(0, `rgba(${c}, ${intensity})`);
+                            grad.addColorStop(1, `rgba(${c}, 0)`);
 
-                        // Outer shadow with pulse animation
-                        const timePulse = Math.sin(Date.now() / 200) * 0.2 + 0.8; 
-                        ctx.shadowColor = `rgba(${c}, 1)`;
-                        ctx.shadowBlur = (isActiveNode ? 25 : 12) * intensity * timePulse;
-                        ctx.fill();
-                        ctx.shadowBlur = 0;
+                            ctx.beginPath();
+                            ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+                            ctx.fillStyle = grad;
+                            ctx.fill();
+
+                            // Outer shadow with pulse animation
+                            const timePulse = Math.sin(Date.now() / 200) * 0.2 + 0.8;
+                            ctx.shadowColor = `rgba(${c}, 1)`;
+                            ctx.shadowBlur = (isActiveNode ? 25 : 12) * intensity * timePulse;
+                            ctx.fill();
+                            ctx.shadowBlur = 0;
+                        }
+
+                        // Node border
+                        ctx.strokeStyle = isActiveNode ? '#fff' : '#444';
+                        ctx.lineWidth = isActiveNode ? 2 : 1;
+                        ctx.stroke();
                     }
 
-                    // Node border
-                    ctx.strokeStyle = isActiveNode ? '#fff' : '#444';
-                    ctx.lineWidth = isActiveNode ? 2 : 1;
-                    ctx.stroke();
-
-                    // Text Value — only show if radius is large enough to be readable
-                    if (radius >= 10) {
+                    // Text Value — only show for active (non-dropped) neurons with enough radius
+                    if (!isDropped && radius >= 10) {
                         ctx.font = isActiveNode ? `bold ${Math.min(13, radius * 0.8)}px monospace` : `bold ${Math.min(12, radius * 0.75)}px monospace`;
                         ctx.textAlign = 'center';
                         ctx.textBaseline = 'middle';
-                        
                         ctx.shadowColor = '#000';
                         ctx.shadowBlur = 4;
-                        
                         if (isActiveNode) {
                             ctx.fillStyle = '#fff';
                             ctx.shadowBlur = 6;
                         } else {
                             ctx.fillStyle = activeNode ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.95)';
                         }
-                        
                         ctx.fillText(act.toFixed(2), node.x, node.y);
                         ctx.shadowBlur = 0;
                     }

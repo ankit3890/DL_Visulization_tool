@@ -25,6 +25,8 @@ ACTIVATION_MODULES = {
     nn.Hardsigmoid: 'Hardsigmoid',
 }
 
+BATCHNORM_MODULES = (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d, nn.LayerNorm)
+
 
 class ModelTracker:
     def __init__(self, model: nn.Module):
@@ -32,18 +34,29 @@ class ModelTracker:
         self.layers = []
         self.activations = {}
         self.hooks = []
-        self.perf_warnings = []  # collected for the frontend dialog
+        self.perf_warnings = []
 
         self._parse_architecture()
         self._detect_activations()
         self._register_hooks()
 
+    # ------------------------------------------------------------------
+    # Architecture parsing
+    # ------------------------------------------------------------------
+
     def _parse_architecture(self):
         """
-        Extracts the architecture, focusing on Linear layers.
-        Sends soft warnings when layers are large — no hard caps applied here.
-        The browser will ask the user whether to render all neurons or cap the display.
+        Extracts Linear layers and detects associated Dropout / BatchNorm modules
+        by scanning the leaf module sequence after each Linear layer.
         """
+        # Ordered flat list of all leaf modules (no children)
+        leaf_modules = [
+            (name, m)
+            for name, m in self.model.named_modules()
+            if not list(m.children())
+        ]
+        name_to_leaf_idx = {name: i for i, (name, _) in enumerate(leaf_modules)}
+
         all_linear = [
             (name, module)
             for name, module in self.model.named_modules()
@@ -64,7 +77,23 @@ class ModelTracker:
             in_f  = module.in_features
             out_f = module.out_features
 
-            # --- Neuron count warnings (input layer) ---
+            # --- Scan forward to find Dropout / BatchNorm for this layer ---
+            dropout_p      = None
+            dropout_module = None
+            has_batchnorm  = False
+            leaf_idx = name_to_leaf_idx.get(name)
+            if leaf_idx is not None:
+                for j in range(leaf_idx + 1, len(leaf_modules)):
+                    _, next_mod = leaf_modules[j]
+                    if isinstance(next_mod, nn.Linear):
+                        break  # stop at next linear layer
+                    if isinstance(next_mod, BATCHNORM_MODULES):
+                        has_batchnorm = True
+                    if isinstance(next_mod, nn.Dropout) and dropout_module is None:
+                        dropout_p      = next_mod.p
+                        dropout_module = next_mod
+
+            # --- Neuron count warnings ---
             if layer_idx == 0:
                 if in_f > WARN_NEURONS:
                     msg = (
@@ -77,10 +106,12 @@ class ModelTracker:
                 self.layers.append({
                     "id":   "input",
                     "size": in_f,
-                    "type": "input"
+                    "type": "input",
+                    "dropout_p":      None,
+                    "dropout_module": None,
+                    "has_batchnorm":  False,
                 })
 
-            # --- Neuron count warnings (output of this layer) ---
             if out_f > WARN_NEURONS:
                 msg = (
                     f"Layer '{name}' has {out_f} neurons. "
@@ -90,32 +121,32 @@ class ModelTracker:
                 self.perf_warnings.append(msg)
 
             self.layers.append({
-                "id":        f"layer_{layer_idx}",
-                "name":      name,
-                "size":      out_f,
-                "type":      "linear",
-                "module":    module,
-                "activation": None  # filled in by _detect_activations()
+                "id":            f"layer_{layer_idx}",
+                "name":          name,
+                "size":          out_f,
+                "type":          "linear",
+                "module":        module,
+                "activation":    None,          # filled by _detect_activations()
+                "dropout_p":     dropout_p,     # e.g. 0.3, or None
+                "dropout_module": dropout_module,
+                "has_batchnorm": has_batchnorm,
             })
             layer_idx += 1
 
+    # ------------------------------------------------------------------
+    # Activation function detection
+    # ------------------------------------------------------------------
+
     def _detect_activations(self):
-        """
-        Detects activation functions that follow each Linear layer.
-        Uses two strategies:
-          1. Module-based: inspects leaf modules in definition order (catches nn.ReLU(), etc.)
-          2. FX tracing:   traces the forward() graph to find functional calls
-                           (catches torch.sigmoid(), torch.relu(), F.relu(), etc.)
-        """
-        # --- Strategy 1: Module-based detection ---
+        """Detects activation functions following each Linear layer (module + FX)."""
         leaf_modules = [
             (name, m)
             for name, m in self.model.named_modules()
             if not list(m.children())
         ]
+        name_to_leaf_idx = {name: i for i, (name, _) in enumerate(leaf_modules)}
 
-        name_to_leaf_idx = {name: i for i, (name, m) in enumerate(leaf_modules)}
-
+        # Strategy 1: module-based
         for layer in self.layers:
             if layer["type"] != "linear":
                 continue
@@ -130,8 +161,7 @@ class ModelTracker:
                         layer["activation"] = act_label
                         break
 
-        # --- Strategy 2: FX graph tracing (for functional activations) ---
-        # Only runs for layers that Strategy 1 didn't find an activation for.
+        # Strategy 2: FX graph tracing (functional activations)
         FUNCTIONAL_ACTIVATIONS = {
             torch.relu:     'ReLU',
             torch.sigmoid:  'Sigmoid',
@@ -147,47 +177,39 @@ class ModelTracker:
             F.softmax:      'Softmax',
             F.mish:         'Mish',
         }
-
-        # Method calls on tensors: e.g. z.sigmoid(), x.relu()
-        METHOD_ACTIVATIONS = {
-            'sigmoid': 'Sigmoid',
-            'relu':    'ReLU',
-            'tanh':    'Tanh',
-        }
+        METHOD_ACTIVATIONS = {'sigmoid': 'Sigmoid', 'relu': 'ReLU', 'tanh': 'Tanh'}
 
         try:
             traced = torch.fx.symbolic_trace(self.model)
-
-            # Map module attribute names to our tracked layer indices
             linear_names = {
                 l["name"]: i
                 for i, l in enumerate(self.layers)
                 if l["type"] == "linear"
             }
-
             for node in traced.graph.nodes:
                 act_label = None
-
                 if node.op == 'call_function' and node.target in FUNCTIONAL_ACTIVATIONS:
                     act_label = FUNCTIONAL_ACTIVATIONS[node.target]
                 elif node.op == 'call_method' and node.target in METHOD_ACTIVATIONS:
                     act_label = METHOD_ACTIVATIONS[node.target]
                 else:
                     continue
-
-                # Walk backwards through args to find which Linear produced the input
                 for arg in node.args:
                     if hasattr(arg, 'target') and arg.target in linear_names:
                         idx = linear_names[arg.target]
                         if self.layers[idx]["activation"] is None:
                             self.layers[idx]["activation"] = act_label
         except Exception:
-            # FX tracing can fail for models with dynamic control flow,
-            # data-dependent shapes, etc. Module-based detection still works.
             pass
 
+    # ------------------------------------------------------------------
+    # Hook registration
+    # ------------------------------------------------------------------
+
     def _register_hooks(self):
-        """Registers forward hooks to capture full activations (no truncation)."""
+        """Registers forward hooks to capture activations and dropout masks."""
+
+        # Activation hooks on Linear layers
         for layer_info in self.layers:
             if layer_info["type"] == "linear":
                 module   = layer_info["module"]
@@ -198,17 +220,45 @@ class ModelTracker:
                         self.activations["input"] = input[0][0].detach().cpu().numpy().tolist()
                     self.activations[lid] = output[0].detach().cpu().numpy().tolist()
 
-                hook = module.register_forward_hook(hook_fn)
-                self.hooks.append(hook)
+                self.hooks.append(module.register_forward_hook(hook_fn))
+
+        # Dropout mask hooks — detect which neurons are dropped each forward pass
+        for layer_info in self.layers:
+            dp_module = layer_info.get("dropout_module")
+            if dp_module is None:
+                continue
+            layer_id = layer_info["id"]
+
+            def dropout_hook(module, input, output, lid=layer_id):
+                if not module.training:
+                    # Eval mode: dropout is disabled, clear any stale mask
+                    self.activations.pop(f"{lid}_dropped", None)
+                    return
+                # Compare pre- and post-dropout values:
+                # A neuron is "dropped" if it had a non-zero value before but is 0 after.
+                inp = input[0][0].detach().cpu()
+                out = output[0].detach().cpu()
+                was_active = inp.abs() > 1e-6
+                now_zero   = out.abs() < 1e-6
+                dropped    = (was_active & now_zero).numpy().tolist()
+                self.activations[f"{lid}_dropped"] = dropped
+
+            self.hooks.append(dp_module.register_forward_hook(dropout_hook))
+
+    # ------------------------------------------------------------------
+    # Data accessors
+    # ------------------------------------------------------------------
 
     def get_architecture_data(self):
-        """Returns the full structure of the network, including detected activation functions."""
+        """Returns the full network structure including Dropout and BatchNorm info."""
         return [
             {
-                "id":         l["id"],
-                "size":       l["size"],
-                "type":       l["type"],
-                "activation": l.get("activation")  # e.g. 'ReLU', 'Sigmoid', or None
+                "id":            l["id"],
+                "size":          l["size"],
+                "type":          l["type"],
+                "activation":    l.get("activation"),
+                "dropout_p":     l.get("dropout_p"),       # float or null
+                "has_batchnorm": l.get("has_batchnorm", False),
             }
             for l in self.layers
         ]
@@ -220,7 +270,6 @@ class ModelTracker:
             source_id = self.layers[i - 1]["id"]
             target_id = self.layers[i]["id"]
             module    = self.layers[i]["module"]
-            # PyTorch weight: (out_features, in_features) -> transpose to (in, out)
             w = module.weight.detach().cpu().numpy().T
             weights_data[f"{source_id}->{target_id}"] = w.tolist()
         return weights_data
@@ -236,7 +285,7 @@ class ModelTracker:
         return biases_data
 
     def get_activations_data(self):
-        """Returns the latest captured activations."""
+        """Returns latest activations + dropout masks (keys ending in '_dropped')."""
         return self.activations
 
     def get_perf_warnings(self):
