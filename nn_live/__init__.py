@@ -92,11 +92,20 @@ class Visualizer:
     # Public API
     # ------------------------------------------------------------------
 
-    def step(self, epoch=None, loss=None, accuracy=None):
+    def step(self, epoch=None, loss=None, accuracy=None, verbose=True):
         """
         Call this method in your training loop (e.g. after a forward/backward pass)
         to push the latest weights, biases, activations, and stats to the visualizer.
+
+        Args:
+            epoch:    Current epoch number (int).
+            loss:     Current loss value (torch.Tensor or float).
+            accuracy: Current accuracy 0-1 (torch.Tensor or float), optional.
+            verbose:  If True (default), prints epoch/loss/accuracy to the notebook.
         """
+        loss_val = loss.item() if hasattr(loss, 'item') else loss
+        acc_val  = accuracy.item() if hasattr(accuracy, 'item') else accuracy
+
         data = {
             "type": "update",
             "architecture": self.tracker.get_architecture_data(),
@@ -106,14 +115,23 @@ class Visualizer:
             "warnings":     self.tracker.get_perf_warnings(),
             "stats": {
                 "epoch":    epoch,
-                "loss":     loss.item() if hasattr(loss, 'item') else loss,
-                "accuracy": accuracy.item() if hasattr(accuracy, 'item') else accuracy,
+                "loss":     loss_val,
+                "accuracy": acc_val,
             },
         }
         self.server.broadcast_data(data)
 
+        if verbose:
+            parts = []
+            if epoch    is not None: parts.append(f"Epoch: {epoch}")
+            if loss_val is not None: parts.append(f"Loss: {loss_val:.4f}")
+            if acc_val  is not None: parts.append(f"Acc: {acc_val*100:.2f}%")
+            if parts:
+                print(" | ".join(parts), flush=True)
+
     def cleanup(self):
         """Removes PyTorch hooks."""
         self.tracker.cleanup()
+
 
 
