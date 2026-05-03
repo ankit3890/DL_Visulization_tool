@@ -20,15 +20,22 @@ async def root():
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
-        self._last_message: str | None = None  # cached last state
+        self._last_message: str | None = None   # serialized cache
+        self._pending_data: dict | None = None  # raw data for lazy serialization
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        # Replay last known state so late-joining clients see data immediately
-        if self._last_message is not None:
+        # Replay last known state to late-joining clients
+        msg = self._last_message
+        if msg is None and self._pending_data is not None:
+            # Lazy serialize now that someone is actually connecting
+            msg = json.dumps(self._pending_data)
+            self._last_message = msg
+            self._pending_data = None
+        if msg is not None:
             try:
-                await websocket.send_text(self._last_message)
+                await websocket.send_text(msg)
             except Exception:
                 pass
 
@@ -75,14 +82,17 @@ class LiveServer:
         self.loop.run_forever()
 
     def broadcast_data(self, data: dict):
-        """Send data to all connected websocket clients and cache for late joiners."""
-        message = json.dumps(data)
-        manager._last_message = message  # always cache, even if no clients yet
+        """Send data to connected clients. Serialization is lazy — only happens when a client is connected."""
+        if manager.active_connections:
+            # Clients are connected — serialize and send now
+            message = json.dumps(data)
+            manager._last_message = message
+            manager._pending_data = None
 
-        if not manager.active_connections:
-            return
+            async def send():
+                await manager.broadcast(message)
 
-        async def send():
-            await manager.broadcast(message)
-
-        asyncio.run_coroutine_threadsafe(send(), self.loop)
+            asyncio.run_coroutine_threadsafe(send(), self.loop)
+        else:
+            # No clients yet — store raw dict, serialize lazily on connect
+            manager._pending_data = data

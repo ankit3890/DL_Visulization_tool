@@ -101,10 +101,18 @@ class Visualizer:
             epoch:    Current epoch number (int).
             loss:     Current loss value (torch.Tensor or float).
             accuracy: Current accuracy 0-1 (torch.Tensor or float), optional.
-            verbose:  If True (default), prints epoch/loss/accuracy to the notebook.
+            verbose:  If True, prints epoch/loss/accuracy to the notebook output.
         """
+        import time
+
         loss_val = loss.item() if hasattr(loss, 'item') else loss
         acc_val  = accuracy.item() if hasattr(accuracy, 'item') else accuracy
+
+        # Throttle: send at most once every 200ms so batch-level calls don't flood
+        now = time.monotonic()
+        if hasattr(self, '_last_step_time') and (now - self._last_step_time) < 0.2:
+            return
+        self._last_step_time = now
 
         data = {
             "type": "update",
@@ -132,6 +140,7 @@ class Visualizer:
     def cleanup(self):
         """Removes PyTorch hooks."""
         self.tracker.cleanup()
+
 
 
 

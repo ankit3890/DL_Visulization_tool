@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="nn_live",
-    version="0.1.4",
+    version="0.1.5",
     author="Ankit Kumar Singh",
     description="Real-Time Neural Network Visualizer for PyTorch",
     long_description=long_description,
