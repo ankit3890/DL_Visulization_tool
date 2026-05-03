@@ -74,8 +74,25 @@ def run_server(port=8000):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="error")
 
+
 class LiveServer:
+    """Singleton-per-port server — calling LiveServer(port) multiple times
+    returns the same instance so Optuna / HPO loops don't crash."""
+
+    _instances: dict[int, "LiveServer"] = {}
+
+    def __new__(cls, port=8000):
+        if port in cls._instances:
+            return cls._instances[port]
+        instance = super().__new__(cls)
+        cls._instances[port] = instance
+        instance._initialized = False
+        return instance
+
     def __init__(self, port=8000):
+        if self._initialized:
+            return  # Already running — skip everything
+        self._initialized = True
         self.port = port
         self._sending = False  # guard against concurrent broadcasts
 

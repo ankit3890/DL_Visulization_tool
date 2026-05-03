@@ -1,4 +1,3 @@
-import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -69,7 +68,6 @@ class ModelTracker:
                 f"Model has {len(all_linear)} Linear layers. "
                 "Consider using fewer layers for smoother browser performance."
             )
-            warnings.warn(f"nn_live: {msg}", UserWarning, stacklevel=3)
             self.perf_warnings.append(msg)
 
         layer_idx = 0
@@ -100,7 +98,6 @@ class ModelTracker:
                         f"Input layer has {in_f} neurons. "
                         "The browser will ask you whether to render all neurons or cap the display for performance."
                     )
-                    warnings.warn(f"nn_live: {msg}", UserWarning, stacklevel=3)
                     self.perf_warnings.append(msg)
 
                 self.layers.append({
@@ -117,7 +114,6 @@ class ModelTracker:
                     f"Layer '{name}' has {out_f} neurons. "
                     "The browser will ask you whether to render all neurons or cap the display for performance."
                 )
-                warnings.warn(f"nn_live: {msg}", UserWarning, stacklevel=3)
                 self.perf_warnings.append(msg)
 
             self.layers.append({
