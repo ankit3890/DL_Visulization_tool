@@ -92,7 +92,7 @@ class Visualizer:
     # Public API
     # ------------------------------------------------------------------
 
-    def step(self, epoch=None, loss=None, accuracy=None, verbose=True):
+    def step(self, epoch=None, loss=None, accuracy=None, verbose=False):
         """
         Call this method in your training loop (e.g. after a forward/backward pass)
         to push the latest weights, biases, activations, and stats to the visualizer.
