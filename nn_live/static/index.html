@@ -384,6 +384,26 @@
                 <span class="stat-label">Accuracy</span>
                 <span class="stat-val" id="stat-acc">-</span>
             </div>
+            <div class="stat-row" id="row-optimizer" style="display:none; border-top:1px solid rgba(255,255,255,0.08); margin-top:6px; padding-top:6px;">
+                <span class="stat-label">Optimizer</span>
+                <span class="stat-val" id="stat-optimizer">-</span>
+            </div>
+            <div class="stat-row" id="row-lr" style="display:none">
+                <span class="stat-label">LR</span>
+                <span class="stat-val" id="stat-lr">-</span>
+            </div>
+            <div class="stat-row" id="row-momentum" style="display:none">
+                <span class="stat-label">Momentum</span>
+                <span class="stat-val" id="stat-momentum">-</span>
+            </div>
+            <div class="stat-row" id="row-betas" style="display:none">
+                <span class="stat-label">Betas</span>
+                <span class="stat-val" id="stat-betas">-</span>
+            </div>
+            <div class="stat-row" id="row-wd" style="display:none">
+                <span class="stat-label">Weight Decay</span>
+                <span class="stat-val" id="stat-wd">-</span>
+            </div>
         </div>
 
         <div class="legend glass-panel">
@@ -401,6 +421,14 @@
             </div>
             <div class="legend-item">
                 <span>⏺️ Inside Node = <b>Activation</b></span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: linear-gradient(90deg,#00ff88,#ffaa00,#ff4444); box-shadow: 0 0 6px #00ff88;"></div>
+                <span>Bar = Gradient Norm</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ff8c00; box-shadow: 0 0 8px #ff8c00; opacity: 0.7;"></div>
+                <span>Orange = <b>Dropped</b> (Dropout)</span>
             </div>
             <div class="legend-item">
                 <span>📌 Offset Dot = <b>Bias</b></span>
@@ -522,10 +550,12 @@
         let weights = {};
         let biases = {};
         let activations = {};
-        
-        let targetWeights = {};
-        let targetBiases = {};
+        let gradients   = {};
+
+        let targetWeights     = {};
+        let targetBiases      = {};
         let targetActivations = {};
+        let targetGradients   = {};
 
         // WebSocket
         function connect() {
@@ -561,6 +591,7 @@
             targetWeights     = data.weights     || {};
             targetBiases      = data.biases       || {};
             targetActivations = data.activations  || {};
+            targetGradients   = data.gradients    || {};
 
             // Trigger performance dialog the FIRST time we see a large layer
             if (!perfDialogShown && data.warnings && data.warnings.length > 0) {
@@ -569,24 +600,35 @@
                 perfModalOverlay.classList.add('visible');
             }
 
-            // Update Stats
+            // Update training stats
             if (data.stats) {
                 document.getElementById('stat-epoch').textContent = data.stats.epoch ?? '-';
-                
-                if (data.stats.loss !== null) {
+                if (data.stats.loss !== null)
                     document.getElementById('stat-loss').textContent = data.stats.loss.toFixed(4);
-                }
-                
-                if (data.stats.accuracy !== null) {
-                    document.getElementById('stat-acc').textContent = (data.stats.accuracy*100).toFixed(1) + '%';
-                }
+                if (data.stats.accuracy !== null)
+                    document.getElementById('stat-acc').textContent = (data.stats.accuracy * 100).toFixed(1) + '%';
+            }
+
+            // Update optimizer hyperparameter panel
+            if (data.optimizer_info) {
+                const oi = data.optimizer_info;
+                const show = (id, rowId, val) => {
+                    document.getElementById(rowId).style.display = '';
+                    document.getElementById(id).textContent = val;
+                };
+                if (oi.type)         show('stat-optimizer', 'row-optimizer', oi.type);
+                if (oi.lr != null)   show('stat-lr',        'row-lr',        oi.lr.toExponential(3));
+                if (oi.momentum)     show('stat-momentum',  'row-momentum',  oi.momentum);
+                if (oi.betas)        show('stat-betas',     'row-betas',     `[${oi.betas.join(', ')}]`);
+                if (oi.weight_decay) show('stat-wd',        'row-wd',        oi.weight_decay);
             }
 
             // Init state if empty
             if (Object.keys(weights).length === 0) {
-                weights = JSON.parse(JSON.stringify(targetWeights));
-                biases = JSON.parse(JSON.stringify(targetBiases));
+                weights     = JSON.parse(JSON.stringify(targetWeights));
+                biases      = JSON.parse(JSON.stringify(targetBiases));
                 activations = JSON.parse(JSON.stringify(targetActivations));
+                gradients   = JSON.parse(JSON.stringify(targetGradients));
             }
         }
 
@@ -636,6 +678,11 @@
             const lerpFactor = 0.15;
             
             for (let layerId in targetActivations) {
+                // Skip boolean dropout mask keys — copy directly, don't lerp
+                if (layerId.endsWith('_dropped')) {
+                    activations[layerId] = targetActivations[layerId];
+                    continue;
+                }
                 if (!activations[layerId]) activations[layerId] = JSON.parse(JSON.stringify(targetActivations[layerId]));
                 for (let i = 0; i < targetActivations[layerId].length; i++) {
                     activations[layerId][i] = lerp(activations[layerId][i], targetActivations[layerId][i], lerpFactor);
@@ -657,6 +704,13 @@
                     biases[layerId][i] = lerp(biases[layerId][i], targetBiases[layerId][i], lerpFactor);
                 }
             }
+
+            // Lerp gradient norms (scalar per layer)
+            for (let layerId in targetGradients) {
+                if (gradients[layerId] === undefined) gradients[layerId] = targetGradients[layerId];
+                gradients[layerId] = lerp(gradients[layerId], targetGradients[layerId], lerpFactor);
+            }
+
 
             // Calculate Normalization Maxes
             let maxAct = 1.0;
@@ -691,20 +745,23 @@
                 const x = startX + lIdx * layerSpacing;
                 const displaySize = Math.min(layer.size, effectiveCap);
 
-                const paddingY = 120;
-                const availableHeight = canvas.height - 2 * paddingY;
+                // Reserve top space for: label(80) + size(100) + dropout badge + BN badge + margin
+                // Reserve bottom space for: gradient bar (38px) + label (10px) + margin
+                const topPad    = 175;   // clears all header badges
+                const bottomPad = 60;    // clears gradient bar
+                const availableHeight = canvas.height - topPad - bottomPad;
 
                 // Shrink radius for dense layers so all nodes fit
-                // Min radius = 8px for very large layers, max = 18px for small ones
                 const radius = Math.max(8, Math.min(18, (availableHeight / maxLayerSize) * 0.4));
 
-                // Spacing: at minimum give 2px gap between nodes (2*radius + 2px)
+                // Spacing: at minimum give 2px gap between nodes
                 const nodeSpacing = Math.min(
                     availableHeight / displaySize,
                     2 * radius + Math.max(2, (availableHeight - displaySize * 2 * radius) / Math.max(displaySize - 1, 1))
                 );
                 const totalHeight = (displaySize - 1) * nodeSpacing;
-                const startY = (canvas.height - totalHeight) / 2;
+                // Center neurons in the zone between header and gradient bar
+                const startY = topPad + (availableHeight - totalHeight) / 2;
 
                 // Draw vertical subtle grouping line
                 ctx.beginPath();
@@ -762,6 +819,45 @@
                     ctx.stroke();
                     ctx.fillStyle = '#a070ff';
                     ctx.fillText(bnText, x, badgeY);
+                }
+
+                // Gradient norm bar (drawn at the bottom of each column)
+                const gNorm = gradients[layer.id];
+                if (gNorm !== undefined) {
+                    const barW = 80, barH = 6;
+                    const barX = x - barW / 2;
+                    const barY = canvas.height - 38;
+
+                    // Background track
+                    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+                    ctx.beginPath();
+                    ctx.roundRect(barX, barY, barW, barH, 3);
+                    ctx.fill();
+
+                    // Color: green=healthy, yellow=small, red=exploding
+                    let gradColor;
+                    if      (gNorm < 1e-4) gradColor = '#ffaa00';   // vanishing
+                    else if (gNorm > 10)   gradColor = '#ff4444';   // exploding
+                    else                   gradColor = '#00ff88';   // healthy
+
+                    // Fill proportion: log scale capped to [0, 1]
+                    const logNorm  = Math.log10(Math.max(gNorm, 1e-7) + 1e-7);
+                    const logRange = Math.log10(100);
+                    const fill     = Math.min(Math.max((logNorm + 7) / (logRange + 7), 0.03), 1.0);
+
+                    ctx.fillStyle = gradColor;
+                    ctx.shadowColor = gradColor;
+                    ctx.shadowBlur  = 6;
+                    ctx.beginPath();
+                    ctx.roundRect(barX, barY, barW * fill, barH, 3);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+
+                    // Label
+                    ctx.font = '9px monospace';
+                    ctx.fillStyle = gradColor;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`∇ ${gNorm < 0.001 ? gNorm.toExponential(1) : gNorm.toFixed(3)}`, x, barY + barH + 10);
                 }
 
                 nodes[layer.id] = [];
@@ -839,11 +935,13 @@
                 if (wMatrix) {
                     nodes[sourceLayer.id].forEach(sNode => {
                         if (sNode.isEllipsis) return;
-                        const srcDropped = (activations[`${sourceLayer.id}_dropped`] || [])[sNode.actualIndex] === true;
+                        if (sNode.id.endsWith('_dropped')) return;
+                        const srcDropped = (activations[`${sourceLayer.id}_dropped`] || [])[sNode.actualIndex] > 0.5;
 
                         nodes[targetLayer.id].forEach(tNode => {
                             if (tNode.isEllipsis) return;
-                            const tgtDropped = (activations[`${targetLayer.id}_dropped`] || [])[tNode.actualIndex] === true;
+                            if (tNode.id.endsWith('_dropped')) return;
+                            const tgtDropped = (activations[`${targetLayer.id}_dropped`] || [])[tNode.actualIndex] > 0.5;
 
                             let w = wMatrix[sNode.actualIndex][tNode.actualIndex];
                             let normW = w / maxWeight;
@@ -959,7 +1057,7 @@
 
                     // --- Dropout mask check ---
                     const droppedList = activations[`${layer.id}_dropped`] || [];
-                    const isDropped   = droppedList.length > node.actualIndex && droppedList[node.actualIndex] === true;
+                    const isDropped   = droppedList.length > node.actualIndex && droppedList[node.actualIndex] > 0.5;
 
                     // --- Draw Node Base ---
                     ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -967,20 +1065,24 @@
                     ctx.fill();
 
                     if (isDropped) {
-                        // Grey dimmed neuron — show it's switched off
-                        ctx.globalAlpha = 0.35;
+                        // Orange neuron — dropped by Dropout this forward pass
+                        ctx.globalAlpha = 0.55;
                         ctx.beginPath();
                         ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
-                        ctx.fillStyle = '#444';
+                        ctx.fillStyle = '#ff8c00';
                         ctx.fill();
-                        ctx.strokeStyle = 'rgba(120,120,120,0.5)';
-                        ctx.lineWidth = 1;
+                        // Orange glow
+                        ctx.shadowColor = '#ff8c00';
+                        ctx.shadowBlur = 10;
+                        ctx.strokeStyle = 'rgba(255,140,0,0.8)';
+                        ctx.lineWidth = 1.5;
                         ctx.stroke();
-                        // Strike-through line (the neuron is "off")
+                        ctx.shadowBlur = 0;
+                        // Strike-through line
                         ctx.beginPath();
                         ctx.moveTo(node.x - radius * 0.7, node.y);
                         ctx.lineTo(node.x + radius * 0.7, node.y);
-                        ctx.strokeStyle = 'rgba(255,80,80,0.6)';
+                        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
                         ctx.lineWidth = 1.5;
                         ctx.stroke();
                         ctx.globalAlpha = 1.0;

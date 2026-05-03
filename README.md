@@ -46,11 +46,15 @@ This turns neural networks from a black box into something you can understand vi
 | **Weight Lines** | Connections colored and sized by weight magnitude. Weak weights auto-fade to reduce clutter |
 | **Flow Particles** | Animated signal particles travel left to right along edges; speed scales with weight strength |
 | **Bias Pills** | Small badges below each node show the neuron's bias value at a glance |
-| **Stats HUD** | Live Epoch, Loss, and Accuracy panel in the top-right corner |
+| **Stats HUD** | Live Epoch, Loss, Accuracy, Learning Rate, Optimizer, and Momentum panel |
 | **Hover Tooltips** | Hover over any neuron to see its exact activation, bias, and layer info |
 | **Focus Mode** | Click a neuron to highlight only its connections. Everything else dims to near-black |
-| **Controls** | Toggle normalization, particle flow, and adjust animation speed in real-time |
-| **Activation Badges** | Auto-detects activation functions (ReLU, Sigmoid, Tanh, etc.) and displays them between layer columns |
+| **Controls** | Toggle normalization, particle flow, adjust animation speed and neuron cap in real-time |
+| **Activation Badges** | Auto-detects activation functions (ReLU, Sigmoid, Tanh, etc.) — scans past BatchNorm/Dropout |
+| **Dropout Visualization** | Dropped neurons turn **orange** with a strike-through every forward pass |
+| **BatchNorm Badge** | Layers with `BatchNorm1d/2d/3d` display a purple `⚖ BatchNorm` badge |
+| **Gradient Norm Bars** | Colored bar at the bottom of each layer: 🟢 healthy · 🟡 vanishing · 🔴 exploding |
+| **Optimizer Panel** | Pass your optimizer to `Visualizer` to see LR, type, momentum, betas and weight decay live |
 | **Safety Limits** | Automatically caps large networks to protect browser performance, with clear warnings |
 
 
@@ -97,56 +101,48 @@ import torch.nn as nn
 from nn_live import Visualizer
 
 # 1. Define your model
-#    Use unique names for each activation (sigmoid1, sigmoid2, etc.)
-#    so the visualizer can detect and display all of them.
-
-class Model1(nn.Module):
+class ANN(nn.Module):
     def __init__(self, num_features):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Linear(num_features, 5),
+            nn.Linear(num_features, 128),
+            nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Linear(5, 3),
-            nn.Sigmoid(),
-            nn.Linear(3, 5),
-            nn.Sigmoid(),
-            nn.Linear(5, 1),
-            nn.ReLU()
+            nn.Dropout(p=0.3),
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(64, 10),
         )
 
     def forward(self, features):
-        out = self.network(features)
-        return out
+        return self.network(features)
 
-num_features = 30
-model = Model1(num_features)
+num_features = 784
+model = ANN(num_features)
 
-# 2. Attach the visualizer — opens browser automatically
-viz = Visualizer(model, port=8000)   # Line 1 to be added
+# 2. Set up optimizer
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+loss_fn   = nn.CrossEntropyLoss()
 
-# 3. Train and push live updates each epoch
-optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
-loss_fn = nn.BCELoss()
+# 3. Attach the visualizer — pass optimizer to see LR / hyperparams live
+viz = Visualizer(model, port=8000, optimizer=optimizer)
 
-for epoch in range(100):
-    inputs  = torch.rand(10, num_features)
-    targets = (torch.rand(10, 1) > 0.5).float()
+# 4. Train and push live updates each batch
+for epoch in range(50):
+    inputs  = torch.rand(32, num_features)
+    targets = torch.randint(0, 10, (32,))
 
-    # Forward pass — must call model(), NOT model.forward()
     outputs = model(inputs)
     loss    = loss_fn(outputs, targets)
 
-    # Accuracy
-    predictions = (outputs > 0.5).float()
-    accuracy    = (predictions == targets).sum().item() / len(targets)
-
-    # Backward pass
+    optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    optimizer.zero_grad()
 
-    # Push to the dashboard
-    viz.step(epoch=epoch + 1, loss=loss, accuracy=accuracy) # Line 2 be added in loop
+    viz.step(epoch=epoch + 1, loss=loss)
+    print(f'Epoch: {epoch + 1}, Loss: {loss.item():.4f}')
 ```
 
 ---
@@ -221,6 +217,20 @@ The lines between nodes represent the **weights** of the network.
 
 > All three fields are **optional**. Pass only what you have — unused fields simply display `-`.
 
+#### Optimizer Hyperparameter Panel
+
+Pass your optimizer to `Visualizer(model, optimizer=optimizer)` to unlock extra rows in the stats panel:
+
+| Field | Optimizer | What it means |
+|---|---|---|
+| **Optimizer** | All | Optimizer class name (e.g. `Adam`, `SGD`) |
+| **LR** | All | Current learning rate — auto-updates when using a LR scheduler |
+| **Momentum** | SGD | Momentum value |
+| **Betas** | Adam / AdamW | Beta1 and Beta2 coefficients |
+| **Weight Decay** | All | L2 regularization strength |
+
+> These rows are **hidden** until an optimizer is passed. They appear automatically on the first `step()` call.
+
 ---
 
 ### Hover Tooltip
@@ -279,6 +289,38 @@ self.sigmoid2 = nn.Sigmoid()
 ```
 
 If no activation is detected for a layer gap (e.g. the model uses an unsupported activation or complex control flow), no badge is drawn — no visual clutter.
+
+> `nn_live` scans **forward past BatchNorm and Dropout** to find the activation function, so `Linear → BatchNorm → ReLU → Dropout` is correctly detected as `ReLU`.
+
+---
+
+### Dropout Visualization
+
+When your model includes `nn.Dropout`, `nn_live` hooks into each Dropout layer and tracks which neurons are dropped **every forward pass**.
+
+| Visual | What it means |
+|---|---|
+| **Orange neuron** | This neuron was zeroed by Dropout in the current forward pass |
+| **Strike-through line** | Visual indicator that the neuron is switched off |
+| **Dimmed edges** | Connections to/from dropped neurons are faded to near-invisible |
+
+> In `model.eval()` mode, Dropout is disabled — all neurons revert to their normal cyan/red colors.
+
+---
+
+### Gradient Norm Bars
+
+A colored progress bar appears at the **bottom of each layer column** showing the L2 norm of that layer's weight gradients (available after `loss.backward()`).
+
+| Bar Color | Gradient Norm | What it means |
+|---|---|---|
+| 🟢 **Green** | `1e-4` to `10` | Healthy — layer is learning well |
+| 🟡 **Yellow** | `< 1e-4` | **Vanishing gradient** — updates barely reach this layer |
+| 🔴 **Red** | `> 10` | **Exploding gradient** — unstable, consider gradient clipping |
+
+The number displayed (e.g. `∇ 1.509`) is the exact gradient L2 norm for that layer.
+
+> Call `viz.step()` **after** `loss.backward()` and **before** `optimizer.zero_grad()` to ensure gradients are readable.
 
 ---
 
@@ -422,7 +464,9 @@ nn_live: Live Visualizer started at http://127.0.0.1:8000
 > `[Show All Neurons]`   `[Cap at 64 (Recommended)]`
 
 - Choosing **Show All Neurons** renders every neuron in the layer. Node sizes dynamically shrink so all neurons fit within the visible canvas height.
-- Choosing **Cap at 64** limits the display to 64 neurons per layer. The layer header will show `64 / 100 Neurons (capped)` so it is always clear that the view is partial.
+- Choosing **Cap at 32** limits the display to 32 neurons per layer (adjustable via the slider). The layer header will show `32 / 128 Neurons (capped)` so it is always clear that the view is partial.
+
+The **Neuron Cap Slider** (4–128) in the Controls panel lets you adjust the cap in real-time without restarting.
 
 The dialog appears **only once per browser session** and does not affect your Python training loop in any way. Full weight, bias, and activation data is always sent from the backend — the cap is purely a rendering decision.
 
@@ -440,8 +484,12 @@ Rendering connections in the browser is GPU/CPU intensive. A `Linear(500, 500)` 
 |---|---|---|
 | `[Errno 10048]` Address in use | `Visualizer()` was called twice on the same port | Restart kernel, or use `Visualizer(model, port=8001)` |
 | Values frozen at `0.00` | Used `model.forward(inputs)` instead of `model(inputs)` | Always call `outputs = model(inputs)` — this triggers PyTorch hooks |
-| Browser lag / FPS drops | Model has very large layers | Choose "Cap at 64" when the browser dialog appears |
+| Browser lag / FPS drops | Model has very large layers | Lower the neuron cap slider or choose "Cap at 32" |
 | Accuracy not showing | Accuracy not passed to `viz.step()` | Add `accuracy=acc_value` to your `viz.step()` call |
+| No orange dropout neurons | Model is in eval mode | Call `model.train()` before the training loop |
+| Gradient bars not showing | `viz.step()` called before `loss.backward()` | Call `viz.step()` after `loss.backward()` and `optimizer.step()` |
+| Optimizer panel not appearing | Optimizer not passed to `Visualizer` | Use `Visualizer(model, optimizer=optimizer)` |
+| `AssertionError` in asyncio (Windows) | Windows ProactorEventLoop bug | Already handled internally — the error is harmless and training continues |
 | Dialog appeared but neurons still capped | Old `tracker.py` cached in Jupyter memory | Restart the Jupyter Kernel so the new code is loaded |
 
 ---

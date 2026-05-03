@@ -25,7 +25,7 @@ def _is_remote_jupyter():
 
 
 class Visualizer:
-    def __init__(self, model, port=8000, open_browser=True):
+    def __init__(self, model, port=8000, open_browser=True, optimizer=None):
         """
         Initializes the live visualizer.
 
@@ -33,11 +33,14 @@ class Visualizer:
             model:        A PyTorch nn.Module instance.
             port:         Port for the local web server.
             open_browser: Automatically open the browser / notebook iframe to the dashboard.
+            optimizer:    (Optional) PyTorch optimizer. When passed, LR, momentum, weight_decay
+                          etc. are automatically shown in the dashboard and update with schedulers.
         """
-        self.model = model
-        self.port = port
-        self.tracker = ModelTracker(model)
-        self.server = LiveServer(port=port)
+        self.model     = model
+        self.port      = port
+        self.optimizer = optimizer
+        self.tracker   = ModelTracker(model)
+        self.server    = LiveServer(port=port)
 
         # Give the server a moment to start
         time.sleep(1)
@@ -60,6 +63,22 @@ class Visualizer:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _extract_optimizer_info(self):
+        """Extract LR, optimizer type, momentum, betas, weight_decay from optimizer param_groups."""
+        if self.optimizer is None:
+            return None
+        try:
+            pg   = self.optimizer.param_groups[0]
+            info = {'type': type(self.optimizer).__name__}
+            if 'lr'           in pg: info['lr']           = round(pg['lr'], 8)
+            if 'momentum'     in pg and pg['momentum']:  info['momentum']     = pg['momentum']
+            if 'weight_decay' in pg and pg['weight_decay']: info['weight_decay'] = pg['weight_decay']
+            if 'betas'        in pg: info['betas']        = [round(b, 4) for b in pg['betas']]
+            if 'eps'          in pg: info['eps']          = pg['eps']
+            return info
+        except Exception:
+            return None
 
     def _open_dashboard(self):
         """Open the dashboard — inline iframe for remote envs (Colab/Kaggle), browser tab for local."""
@@ -102,44 +121,55 @@ class Visualizer:
             loss:     Current loss value (torch.Tensor or float).
             accuracy: Current accuracy 0-1 (torch.Tensor or float), optional.
             verbose:  If True, prints epoch/loss/accuracy to the notebook output.
+
+        NOTE: This method will NEVER raise an exception — visualization errors are
+        printed as warnings so your training loop always continues.
         """
         import time
 
-        loss_val = loss.item() if hasattr(loss, 'item') else loss
-        acc_val  = accuracy.item() if hasattr(accuracy, 'item') else accuracy
-
-        # Throttle: send at most once every 200ms so batch-level calls don't flood
+        # Throttle check first (cheapest path out)
         now = time.monotonic()
         if hasattr(self, '_last_step_time') and (now - self._last_step_time) < 0.2:
             return
         self._last_step_time = now
 
-        data = {
-            "type": "update",
-            "architecture": self.tracker.get_architecture_data(),
-            "weights":      self.tracker.get_weights_data(),
-            "biases":       self.tracker.get_biases_data(),
-            "activations":  self.tracker.get_activations_data(),
-            "warnings":     self.tracker.get_perf_warnings(),
-            "stats": {
-                "epoch":    epoch,
-                "loss":     loss_val,
-                "accuracy": acc_val,
-            },
-        }
-        self.server.broadcast_data(data)
+        try:
+            loss_val = loss.item() if hasattr(loss, 'item') else loss
+            acc_val  = accuracy.item() if hasattr(accuracy, 'item') else accuracy
 
-        if verbose:
-            parts = []
-            if epoch    is not None: parts.append(f"Epoch: {epoch}")
-            if loss_val is not None: parts.append(f"Loss: {loss_val:.4f}")
-            if acc_val  is not None: parts.append(f"Acc: {acc_val*100:.2f}%")
-            if parts:
-                print(" | ".join(parts), flush=True)
+            data = {
+                "type": "update",
+                "architecture": self.tracker.get_architecture_data(),
+                "weights":      self.tracker.get_weights_data(),
+                "biases":       self.tracker.get_biases_data(),
+                "activations":  self.tracker.get_activations_data(),
+                "gradients":    self.tracker.get_gradients_data(),
+                "warnings":     self.tracker.get_perf_warnings(),
+                "optimizer_info": self._extract_optimizer_info(),
+                "stats": {
+                    "epoch":    epoch,
+                    "loss":     loss_val,
+                    "accuracy": acc_val,
+                },
+            }
+            self.server.broadcast_data(data)
+
+            if verbose:
+                parts = []
+                if epoch    is not None: parts.append(f"Epoch: {epoch}")
+                if loss_val is not None: parts.append(f"Loss: {loss_val:.4f}")
+                if acc_val  is not None: parts.append(f"Acc: {acc_val*100:.2f}%")
+                if parts:
+                    print(" | ".join(parts), flush=True)
+
+        except Exception as e:
+            # Visualization must never crash training — just warn
+            print(f"[nn_live] step() skipped (error: {e})", flush=True)
 
     def cleanup(self):
         """Removes PyTorch hooks."""
         self.tracker.cleanup()
+
 
 
 

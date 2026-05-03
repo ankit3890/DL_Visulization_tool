@@ -146,20 +146,25 @@ class ModelTracker:
         ]
         name_to_leaf_idx = {name: i for i, (name, _) in enumerate(leaf_modules)}
 
-        # Strategy 1: module-based
+        # Strategy 1: module-based (scan forward past BN/Dropout to find activation)
         for layer in self.layers:
             if layer["type"] != "linear":
                 continue
             leaf_idx = name_to_leaf_idx.get(layer["name"])
             if leaf_idx is None:
                 continue
-            next_idx = leaf_idx + 1
-            if next_idx < len(leaf_modules):
-                _, next_module = leaf_modules[next_idx]
+            # Scan forward until we hit the next Linear or find an activation
+            for j in range(leaf_idx + 1, len(leaf_modules)):
+                _, next_module = leaf_modules[j]
+                if isinstance(next_module, nn.Linear):
+                    break  # stop at next linear — no activation found
                 for act_type, act_label in ACTIVATION_MODULES.items():
                     if isinstance(next_module, act_type):
                         layer["activation"] = act_label
                         break
+                if layer.get("activation"):
+                    break  # found it, stop scanning
+
 
         # Strategy 2: FX graph tracing (functional activations)
         FUNCTIONAL_ACTIVATIONS = {
@@ -287,6 +292,21 @@ class ModelTracker:
     def get_activations_data(self):
         """Returns latest activations + dropout masks (keys ending in '_dropped')."""
         return self.activations
+
+    def get_gradients_data(self):
+        """Returns per-layer weight gradient L2 norm (available after loss.backward()).
+        Values:
+            - Small (< 1e-4): potential vanishing gradient
+            - Normal (1e-4 – 10): healthy
+            - Large (> 10): potential exploding gradient
+        """
+        grad_data = {}
+        for layer in self.layers:
+            if layer["type"] == "linear":
+                module = layer["module"]
+                if module.weight.grad is not None:
+                    grad_data[layer["id"]] = round(float(module.weight.grad.norm()), 6)
+        return grad_data
 
     def get_perf_warnings(self):
         """Returns performance warnings generated at initialization."""
