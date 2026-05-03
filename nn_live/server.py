@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 import threading
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -29,7 +30,6 @@ class ConnectionManager:
         # Replay last known state to late-joining clients
         msg = self._last_message
         if msg is None and self._pending_data is not None:
-            # Lazy serialize now that someone is actually connecting
             msg = json.dumps(self._pending_data)
             self._last_message = msg
             self._pending_data = None
@@ -44,12 +44,16 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
-        self._last_message = message  # cache before sending
+        self._last_message = message
+        dead = []
         for connection in self.active_connections:
             try:
                 await connection.send_text(message)
             except Exception:
-                pass
+                dead.append(connection)
+        # Clean up dead connections
+        for c in dead:
+            self.disconnect(c)
 
 manager = ConnectionManager()
 
@@ -58,41 +62,57 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 def run_server(port=8000):
-    """Run the uvicorn server. This is meant to be run in a thread."""
+    """Run the uvicorn server in a background thread."""
+    # Use SelectorEventLoop policy for uvicorn on Windows to avoid
+    # ProactorEventLoop assertion errors with concurrent writes
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="error")
 
 class LiveServer:
     def __init__(self, port=8000):
         self.port = port
-        self.thread = threading.Thread(target=run_server, args=(port,), daemon=True)
-        self.loop = asyncio.new_event_loop()
-        self.loop_thread = threading.Thread(target=self._start_loop, daemon=True)
+        self._sending = False  # guard against concurrent broadcasts
 
-        # Start threads
-        self.thread.start()
+        # Broadcast loop — use SelectorEventLoop on Windows
+        if sys.platform == "win32":
+            self.loop = asyncio.SelectorEventLoop()
+        else:
+            self.loop = asyncio.new_event_loop()
+
+        self.loop_thread = threading.Thread(target=self._start_loop, daemon=True)
+        self.server_thread = threading.Thread(target=run_server, args=(port,), daemon=True)
+
         self.loop_thread.start()
+        self.server_thread.start()
 
     def _start_loop(self):
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
     def broadcast_data(self, data: dict):
-        """Send data to connected clients. Serialization is lazy — only happens when a client is connected."""
+        """Send data to connected clients. Lazy serialization + concurrent-write guard."""
+        if self._sending:
+            # Previous send still in flight — skip to avoid ProactorEventLoop assertion
+            return
+
         if manager.active_connections:
-            # Clients are connected — serialize and send now
             message = json.dumps(data)
             manager._last_message = message
             manager._pending_data = None
+            self._sending = True
 
             async def send():
-                await manager.broadcast(message)
+                try:
+                    await manager.broadcast(message)
+                finally:
+                    self._sending = False
 
             asyncio.run_coroutine_threadsafe(send(), self.loop)
         else:
-            # No clients yet — store raw dict, serialize lazily on connect
             manager._pending_data = data
